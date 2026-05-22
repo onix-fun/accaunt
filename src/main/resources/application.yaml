@@ -1,0 +1,33 @@
+ktor:
+  deployment:
+    port: 8080
+  application:
+    modules:
+      - profile.AppKt.module
+
+identity:
+  jwt:
+    issuer: "identity-service"
+    audience: "gateway"
+    secret: "change-me" # Should be in env in prod
+    access_token_exp_minutes: 15
+  session:
+    refresh_token_exp_days: 30
+
+postgres:
+  url: "jdbc:postgresql://localhost:5432/identity"
+  user: "postgres"
+  password: "password"
+
+redis:
+  url: "redis://localhost:6379"
+
+smtp:
+  host: "localhost"
+  port: 2500
+
+s3:
+  endpoint: "http://localhost:9000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  bucket: "avatars"
