@@ -33,12 +33,12 @@ object Users : Table("users") {
 class UserRepository(private val database: Database) {
     companion object {
         private const val CREATE_USER_SQL = """
-            INSERT INTO users (id, email, username, password_hash, first_name, last_name, role, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, email, username, password_hash, email_verified, first_name, last_name, role, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        private const val FIND_BY_EMAIL_SQL = "SELECT * FROM users WHERE email = ?"
+        private const val FIND_BY_EMAIL_SQL = "SELECT * FROM users WHERE LOWER(email) = LOWER(?)"
         private const val FIND_BY_ID_SQL = "SELECT * FROM users WHERE id = ?"
-        private const val FIND_BY_USERNAME_SQL = "SELECT * FROM users WHERE username = ?"
+        private const val FIND_BY_USERNAME_SQL = "SELECT * FROM users WHERE LOWER(username) = LOWER(?)"
     }
 
     fun create(user: User) = transaction(database) {
@@ -48,12 +48,13 @@ class UserRepository(private val database: Database) {
             stmt.setString(2, user.email)
             stmt.setString(3, user.username)
             stmt.setString(4, user.passwordHash)
-            stmt.setString(5, user.firstName)
-            stmt.setString(6, user.lastName)
-            stmt.setString(7, user.role)
-            stmt.setString(8, user.status)
-            stmt.setTimestamp(9, java.sql.Timestamp.from(user.createdAt))
-            stmt.setTimestamp(10, java.sql.Timestamp.from(user.updatedAt))
+            stmt.setBoolean(5, user.emailVerified)
+            stmt.setString(6, user.firstName)
+            stmt.setString(7, user.lastName)
+            stmt.setString(8, user.role)
+            stmt.setString(9, user.status)
+            stmt.setTimestamp(10, java.sql.Timestamp.from(user.createdAt))
+            stmt.setTimestamp(11, java.sql.Timestamp.from(user.updatedAt))
             stmt.executeUpdate()
         }
     }

@@ -1,6 +1,7 @@
 package profile.auth
 
 import kotlinx.serialization.Serializable
+import profile.users.UserProfileDto
 
 @Serializable
 data class RegisterRequest(
@@ -13,7 +14,8 @@ data class RegisterRequest(
 
 @Serializable
 data class LoginRequest(
-    val email: String, 
+    val identifier: String? = null,
+    val email: String? = null,
     val password: String,
     val deviceId: String? = null
 )
@@ -22,12 +24,27 @@ data class LoginRequest(
 data class AuthResponse(
     val accessToken: String,
     val userId: String,
-    val user: profile.infrastructure.db.User
+    val user: UserProfileDto
 )
 
-// No body needed for Refresh or Logout as they use the single HttpOnly cookie.
-// But we might still want the DTOs if we use them in the routes (though they'll be empty).
-// Let's remove them if they aren't needed.
+@Serializable
+data class RegistrationStartedResponse(
+    val email: String,
+    val expiresInSeconds: Long,
+    val message: String
+)
+
+@Serializable
+data class ConfirmRegistrationRequest(
+    val email: String,
+    val code: String,
+    val deviceId: String? = null
+)
+
+@Serializable
+data class ResendRegistrationCodeRequest(
+    val email: String
+)
 
 @Serializable
 data class VerifyEmailRequest(
@@ -36,11 +53,15 @@ data class VerifyEmailRequest(
 
 @Serializable
 data class ForgotPasswordRequest(
-    val email: String
+    val identifier: String? = null,
+    val email: String? = null
 )
 
 @Serializable
 data class ResetPasswordRequest(
-    val token: String,
+    val identifier: String? = null,
+    val email: String? = null,
+    val code: String? = null,
+    val token: String? = null,
     val newPassword: String
 )

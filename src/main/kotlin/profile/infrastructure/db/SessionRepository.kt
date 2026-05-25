@@ -29,6 +29,11 @@ class SessionRepository(private val dataSource: DataSource) {
         private const val REVOKE_SQL = "UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?"
         private const val REVOKE_ALL_FOR_USER_SQL = "UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL"
         private const val UPDATE_EXPIRATION_SQL = "UPDATE sessions SET expires_at = ?, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        private const val ROTATE_TOKEN_SQL = """
+            UPDATE sessions
+            SET refresh_token_hash = ?, expires_at = ?, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND refresh_token_hash = ? AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+        """
         private const val FIND_BY_ID_SQL = "SELECT * FROM sessions WHERE id = ?"
     }
 
@@ -115,6 +120,20 @@ class SessionRepository(private val dataSource: DataSource) {
                 stmt.executeUpdate()
             }
             conn.commit()
+        }
+    }
+
+    fun rotateToken(sessionId: String, oldTokenHash: String, newTokenHash: String, expiresAt: java.time.Instant): Boolean {
+        dataSource.connection.use { conn ->
+            val updated = conn.prepareStatement(ROTATE_TOKEN_SQL).use { stmt ->
+                stmt.setString(1, newTokenHash)
+                stmt.setTimestamp(2, java.sql.Timestamp.from(expiresAt))
+                stmt.setObject(3, UUID.fromString(sessionId))
+                stmt.setString(4, oldTokenHash)
+                stmt.executeUpdate()
+            }
+            conn.commit()
+            return updated == 1
         }
     }
 

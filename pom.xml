@@ -15,7 +15,7 @@
         <kotlin.version>2.2.0</kotlin.version>
         <ktor.version>3.0.3</ktor.version>
         <kotlin.code.style>official</kotlin.code.style>
-        <main.class>io.ktor.server.netty.EngineMain</main.class>
+        <main.class>profile.MainKt</main.class>
         <java.version>23</java.version>
     </properties>
 
@@ -41,6 +41,11 @@
         <dependency>
             <groupId>io.ktor</groupId>
             <artifactId>ktor-server-auth-jvm</artifactId>
+            <version>${ktor.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.ktor</groupId>
+            <artifactId>ktor-server-auth-jwt-jvm</artifactId>
             <version>${ktor.version}</version>
         </dependency>
         <dependency>
@@ -258,25 +263,35 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.7.1</version>
-                <configuration>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                    <archive>
-                        <manifest>
-                            <mainClass>${main.class}</mainClass>
-                        </manifest>
-                    </archive>
-                </configuration>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
                 <executions>
                     <execution>
-                        <id>make-assembly</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>single</goal>
+                            <goal>shade</goal>
                         </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>with-dependencies</shadedClassifierName>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>${main.class}</mainClass>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+                            </transformers>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

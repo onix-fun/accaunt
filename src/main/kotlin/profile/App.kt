@@ -1,12 +1,18 @@
 package profile
 
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
-import io.ktor.server.application.*
+import com.auth0.jwt.JWT
+import com.auth0.jwt.algorithms.Algorithm
 import io.github.smiley4.ktorswaggerui.SwaggerUI
+import io.github.smiley4.ktorswaggerui.data.AuthScheme
+import io.github.smiley4.ktorswaggerui.data.AuthType
 import io.github.smiley4.ktorswaggerui.dsl.routing.get
 import io.github.smiley4.ktorswaggerui.routing.openApiSpec
 import io.github.smiley4.ktorswaggerui.routing.swaggerUI
+import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.server.application.*
+import io.ktor.server.auth.*
+import io.ktor.server.auth.jwt.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.plugins.requestvalidation.*
@@ -18,8 +24,12 @@ import org.koin.ktor.ext.inject
 import org.koin.ktor.plugin.Koin
 import org.koin.logger.slf4jLogger
 import profile.auth.AuthController
+import profile.auth.ConfirmRegistrationRequest
+import profile.auth.ForgotPasswordRequest
 import profile.auth.LoginRequest
 import profile.auth.RegisterRequest
+import profile.auth.ResendRegistrationCodeRequest
+import profile.auth.ResetPasswordRequest
 import profile.auth.authRouting
 import profile.infrastructure.di.koinModule
 import profile.infrastructure.events.EmailEventConsumer
@@ -47,14 +57,49 @@ fun Application.module() {
             when {
                 request.email.isBlank() -> ValidationResult.Invalid("Email cannot be blank")
                 !request.email.contains("@") -> ValidationResult.Invalid("Invalid email format")
+                request.username.isBlank() -> ValidationResult.Invalid("Username cannot be blank")
+                request.username.length < 3 -> ValidationResult.Invalid("Username must be at least 3 characters")
                 request.password.length < 8 -> ValidationResult.Invalid("Password must be at least 8 characters")
                 else -> ValidationResult.Valid
             }
         }
-        validate<LoginRequest> { request ->
+        validate<ConfirmRegistrationRequest> { request ->
             when {
                 request.email.isBlank() -> ValidationResult.Invalid("Email cannot be blank")
+                !request.email.contains("@") -> ValidationResult.Invalid("Invalid email format")
+                !request.code.matches(Regex("\\d{6}")) -> ValidationResult.Invalid("Verification code must be 6 digits")
+                else -> ValidationResult.Valid
+            }
+        }
+        validate<ResendRegistrationCodeRequest> { request ->
+            when {
+                request.email.isBlank() -> ValidationResult.Invalid("Email cannot be blank")
+                !request.email.contains("@") -> ValidationResult.Invalid("Invalid email format")
+                else -> ValidationResult.Valid
+            }
+        }
+        validate<LoginRequest> { request ->
+            val identifier = request.identifier ?: request.email.orEmpty()
+            when {
+                identifier.isBlank() -> ValidationResult.Invalid("Email or username cannot be blank")
                 request.password.isBlank() -> ValidationResult.Invalid("Password cannot be blank")
+                else -> ValidationResult.Valid
+            }
+        }
+        validate<ForgotPasswordRequest> { request ->
+            val identifier = request.identifier ?: request.email.orEmpty()
+            when {
+                identifier.isBlank() -> ValidationResult.Invalid("Email or username cannot be blank")
+                else -> ValidationResult.Valid
+            }
+        }
+        validate<ResetPasswordRequest> { request ->
+            val identifier = request.identifier ?: request.email.orEmpty()
+            val code = request.code ?: request.token.orEmpty()
+            when {
+                identifier.isBlank() -> ValidationResult.Invalid("Email or username cannot be blank")
+                !code.matches(Regex("\\d{6}")) -> ValidationResult.Invalid("Reset code must be 6 digits")
+                request.newPassword.length < 8 -> ValidationResult.Invalid("Password must be at least 8 characters")
                 else -> ValidationResult.Valid
             }
         }
@@ -84,7 +129,6 @@ fun Application.module() {
         allowMethod(HttpMethod.Patch)
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Authorization)
-        allowHeader("X-User-Id")
         
         anyHost()
         
@@ -92,11 +136,47 @@ fun Application.module() {
         allowNonSimpleContentTypes = true
     }
 
+    val jwtSecret = environment.config.property("identity.jwt.secret").getString()
+    val jwtIssuer = environment.config.property("identity.jwt.issuer").getString()
+    val jwtAudience = environment.config.property("identity.jwt.audience").getString()
+
+    install(Authentication) {
+        jwt {
+            verifier(
+                JWT.require(Algorithm.HMAC256(jwtSecret))
+                    .withIssuer(jwtIssuer)
+                    .withAudience(jwtAudience)
+                    .build()
+            )
+            validate { credential ->
+                JWTPrincipal(credential.payload)
+            }
+        }
+    }
+
     install(SwaggerUI) {
         info {
             title = "Identity Service API"
             version = "1.0.0"
             description = "User identity management API"
+        }
+        security {
+            securityScheme("BearerToken") {
+                type = AuthType.HTTP
+                scheme = AuthScheme.BEARER
+                bearerFormat = "JWT"
+                description = "Paste your access token (returned in login response)"
+            }
+        }
+        tags {
+            tag("Auth") { description = "Authentication and authorization" }
+            tag("Users") { description = "User profile management" }
+            tag("Sessions") { description = "Session management" }
+            tag("Search") { description = "User search and lookup" }
+            tag("System") { description = "System health" }
+        }
+        swagger {
+            showTagFilterInput = true
         }
     }
     
@@ -109,25 +189,33 @@ fun Application.module() {
     val sessionController by inject<SessionController>()
     
     // 3. Background Tasks
-    launch {
-        try {
-            searchService.indexAllUsers()
-        } catch (e: Exception) {
-            log.error("Failed to index users: ${e.message}")
-        }
-    }
+    val backgroundTasksEnabled = environment.config
+        .propertyOrNull("identity.background.enabled")
+        ?.getString()
+        ?.toBoolean() ?: true
 
-    launch {
-        try {
-            emailEventConsumer.start()
-        } catch (e: Exception) {
-            log.error("Failed to start email event consumer: ${e.message}")
+    if (backgroundTasksEnabled) {
+        launch {
+            try {
+                searchService.indexAllUsers()
+            } catch (e: Exception) {
+                log.error("Failed to index users: ${e.message}")
+            }
+        }
+
+        launch {
+            try {
+                emailEventConsumer.start()
+            } catch (e: Exception) {
+                log.error("Failed to start email event consumer: ${e.message}")
+            }
         }
     }
     
     // 4. Configure Routing
     routing {
         get("health", {
+            tags = setOf("System")
             summary = "Health check"
             description = "Returns API health status"
             response { code(HttpStatusCode.OK) { description = "API is healthy" } }

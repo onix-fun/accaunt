@@ -8,7 +8,17 @@ import javax.sql.DataSource
 
 object DatabaseFactory {
     fun init(config: PostgresConfig): DataSource {
-        val hikariConfig = HikariConfig().apply {
+        val migrationDs = HikariDataSource(baseConfig(config))
+        runFlyway(migrationDs)
+        migrationDs.close()
+
+        return HikariDataSource(baseConfig(config).apply {
+            schema = "identity"
+        })
+    }
+
+    private fun baseConfig(config: PostgresConfig): HikariConfig {
+        return HikariConfig().apply {
             jdbcUrl = config.url
             username = config.user
             password = config.password
@@ -17,15 +27,14 @@ object DatabaseFactory {
             transactionIsolation = "TRANSACTION_REPEATABLE_READ"
             validate()
         }
-
-        val ds = HikariDataSource(hikariConfig)
-        runFlyway(ds)
-        return ds
     }
 
     private fun runFlyway(datasource: DataSource) {
         val flyway = Flyway.configure()
             .dataSource(datasource)
+            .schemas("identity")
+            .defaultSchema("identity")
+            .createSchemas(true)
             .load()
         flyway.migrate()
     }

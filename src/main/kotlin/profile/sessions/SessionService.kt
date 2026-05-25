@@ -8,20 +8,24 @@ class SessionService(
     private val sessionRepository: SessionRepository,
     private val userRepository: UserRepository
 ) {
-    fun getSessionsForUser(userId: String): List<SessionInfoDto> {
+    fun getSessionsForUser(userId: String, currentSessionId: String?): List<SessionInfoDto> {
         val sessions = sessionRepository.findActiveByUserId(userId)
         
         return sessions.map { session ->
             val user = userRepository.findById(session.userId)
             SessionInfoDto(
-                sessionId = session.id,
+                id = session.id,
                 userId = session.userId,
+                isCurrent = session.id == currentSessionId,
                 deviceId = session.deviceId,
                 userAgent = session.userAgent,
+                ipAddress = session.ipAddress,
                 lastUsedAt = session.lastUsedAt.toString(),
+                expiresAt = session.expiresAt.toString(),
+                createdAt = session.createdAt.toString(),
                 user = user?.toPublicDto()
             )
-        }
+        }.sortedByDescending { it.isCurrent }
     }
 
     fun revokeSession(userId: String, sessionId: String) {

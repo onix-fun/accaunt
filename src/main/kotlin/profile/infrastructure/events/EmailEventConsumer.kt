@@ -1,13 +1,17 @@
 package profile.infrastructure.events
 
 import io.lettuce.core.pubsub.RedisPubSubAdapter
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import profile.infrastructure.redis.RedisManager
 import org.slf4j.LoggerFactory
 
-class EmailEventConsumer(private val redisManager: RedisManager) {
+class EmailEventConsumer(
+    private val redisManager: RedisManager,
+    private val emailSender: SmtpEmailSender
+) {
     private val logger = LoggerFactory.getLogger(EmailEventConsumer::class.java)
 
     fun start() {
@@ -36,16 +40,14 @@ class EmailEventConsumer(private val redisManager: RedisManager) {
             
             when (type) {
                 "email.verify" -> {
-                    val payload = Json.parseToJsonElement(payloadStr).jsonObject
-                    val email = payload["email"]?.jsonPrimitive?.content
-                    val code = payload["code"]?.jsonPrimitive?.content
-                    logger.info("ASYNC: Sending verification email to $email with code: $code")
+                    val payload = Json.decodeFromString<VerificationEmailPayload>(payloadStr)
+                    emailSender.sendVerificationCode(payload.email, payload.code)
+                    logger.info("Sent verification email to ${payload.email}")
                 }
                 "email.password_reset" -> {
-                    val payload = Json.parseToJsonElement(payloadStr).jsonObject
-                    val email = payload["email"]?.jsonPrimitive?.content
-                    val token = payload["token"]?.jsonPrimitive?.content
-                    logger.info("ASYNC: Sending password reset email to $email with token: $token")
+                    val payload = Json.decodeFromString<PasswordResetEmailPayload>(payloadStr)
+                    emailSender.sendPasswordReset(payload.email, payload.code)
+                    logger.info("Sent password reset email to ${payload.email}")
                 }
             }
         } catch (e: Exception) {

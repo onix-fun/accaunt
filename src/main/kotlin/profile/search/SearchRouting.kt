@@ -8,6 +8,7 @@ import profile.users.UserPublicDto
 fun Route.searchRouting(searchController: SearchController) {
     route("/api/search") {
         get("/id-by-username/{username}", {
+            tags = setOf("Search")
             summary = "Get user ID by username"
             description = "Resolves a username to a user ID"
             request { pathParameter<String>("username") { description = "Username" } }
@@ -18,6 +19,7 @@ fun Route.searchRouting(searchController: SearchController) {
         }) { searchController.getIdByUsername(call) }
 
         get("/search", {
+            tags = setOf("Search")
             summary = "Search users"
             description = "Search users by username prefix"
             request { queryParameter<String>("q") { description = "Search query (min 2 chars)" } }

@@ -4,7 +4,6 @@ import profile.auth.AuthService
 import profile.infrastructure.db.User
 import profile.infrastructure.db.UserRepository
 import profile.infrastructure.storage.S3Client
-import java.io.InputStream
 
 class UserService(
     private val userRepository: UserRepository,
@@ -43,9 +42,9 @@ class UserService(
         return userRepository.findById(userId)!!
     }
 
-    suspend fun updateAvatar(userId: String, inputStream: InputStream, contentType: String): User {
+    suspend fun updateAvatar(userId: String, bytes: ByteArray, contentType: String): User {
         userRepository.findById(userId) ?: throw IllegalArgumentException("User not found")
-        val avatarUrl = s3Client.uploadAvatar(userId, inputStream, contentType)
+        val avatarUrl = s3Client.uploadAvatar(userId, bytes, contentType)
         
         userRepository.updateAvatar(userId, avatarUrl)
         

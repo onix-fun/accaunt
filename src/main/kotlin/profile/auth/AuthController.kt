@@ -2,66 +2,78 @@ package profile.auth
 
 import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.auth.*
+import io.ktor.server.auth.jwt.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
+import profile.users.toProfileDto
 
-class AuthController(private val authService: AuthService) {
+class AuthController(
+    private val authService: AuthService,
+    private val sessionConfig: profile.infrastructure.config.SessionConfig
+) {
 
     suspend fun register(call: ApplicationCall) {
         val request = call.receive<RegisterRequest>()
-        val user = authService.register(
+        val response = authService.register(
             request.email, 
             request.username, 
             request.password,
             request.firstName,
             request.lastName
         )
-        call.respond(HttpStatusCode.Created, user)
+        call.respond(HttpStatusCode.Accepted, response)
+    }
+
+    suspend fun confirmRegistration(call: ApplicationCall) {
+        val request = call.receive<ConfirmRegistrationRequest>()
+        val userAgent = call.request.headers["User-Agent"]
+        val ipAddress = call.clientIpAddress()
+        val result = authService.confirmRegistration(request.email, request.code, request.deviceId, userAgent, ipAddress)
+        call.response.cookies.append(refreshCookie(result.refreshToken))
+        call.respond(HttpStatusCode.Created, AuthResponse(result.accessToken, result.user.id, result.user.toProfileDto()))
+    }
+
+    suspend fun resendRegistrationCode(call: ApplicationCall) {
+        val request = call.receive<ResendRegistrationCodeRequest>()
+        val response = authService.resendRegistrationCode(request.email)
+        call.respond(HttpStatusCode.OK, response)
     }
 
     suspend fun login(call: ApplicationCall) {
         val request = call.receive<LoginRequest>()
         val userAgent = call.request.headers["User-Agent"]
-        val ipAddress = call.request.local.remoteHost
+        val ipAddress = call.clientIpAddress()
         
-        val result = authService.login(request.email, request.password, request.deviceId, userAgent, ipAddress)
+        val result = authService.login(request.identifier ?: request.email.orEmpty(), request.password, request.deviceId, userAgent, ipAddress)
         
-        call.response.cookies.append(
-            Cookie(
-                name = "refresh_token",
-                value = result.refreshToken,
-                httpOnly = true,
-                secure = true,
-                path = "/",
-                maxAge = 30 * 24 * 60 * 60
-            )
-        )
+        call.response.cookies.append(refreshCookie(result.refreshToken))
 
-        call.respond(HttpStatusCode.OK, AuthResponse(result.accessToken, result.user.id, result.user))
+        call.respond(HttpStatusCode.OK, AuthResponse(result.accessToken, result.user.id, result.user.toProfileDto()))
     }
 
     suspend fun verifyEmail(call: ApplicationCall) {
-        val userId = call.request.headers["X-User-Id"] ?: throw IllegalArgumentException("Unauthorized")
+        val userId = call.principal<JWTPrincipal>()!!.payload.subject
         val request = call.receive<VerifyEmailRequest>()
         authService.verifyEmail(userId, request.code)
         call.respond(HttpStatusCode.OK, mapOf("message" to "Email verified successfully"))
     }
 
     suspend fun resendVerification(call: ApplicationCall) {
-        val userId = call.request.headers["X-User-Id"] ?: throw IllegalArgumentException("Unauthorized")
+        val userId = call.principal<JWTPrincipal>()!!.payload.subject
         authService.requestEmailVerification(userId)
         call.respond(HttpStatusCode.OK, mapOf("message" to "Verification code resent"))
     }
 
     suspend fun forgotPassword(call: ApplicationCall) {
         val request = call.receive<ForgotPasswordRequest>()
-        authService.forgotPassword(request.email)
-        call.respond(HttpStatusCode.OK, mapOf("message" to "If the email exists, a reset link has been sent"))
+        authService.forgotPassword(request.identifier ?: request.email.orEmpty())
+        call.respond(HttpStatusCode.OK, mapOf("message" to "If the account exists, a reset code has been sent"))
     }
 
     suspend fun resetPassword(call: ApplicationCall) {
         val request = call.receive<ResetPasswordRequest>()
-        authService.resetPassword(request.token, request.newPassword)
+        authService.resetPassword(request.identifier ?: request.email.orEmpty(), request.code ?: request.token.orEmpty(), request.newPassword)
         call.respond(HttpStatusCode.OK, mapOf("message" to "Password has been reset successfully"))
     }
 
@@ -75,16 +87,7 @@ class AuthController(private val authService: AuthService) {
 
         val result = authService.refresh(refreshToken)
         
-        call.response.cookies.append(
-            Cookie(
-                name = "refresh_token",
-                value = refreshToken,
-                httpOnly = true,
-                secure = true,
-                path = "/",
-                maxAge = 30 * 24 * 60 * 60
-            )
-        )
+        call.response.cookies.append(refreshCookie(result.refreshToken))
 
         call.respond(HttpStatusCode.OK, mapOf("accessToken" to result.accessToken))
     }
@@ -95,20 +98,13 @@ class AuthController(private val authService: AuthService) {
             authService.logout(refreshToken)
         }
         
-        call.response.cookies.append(
-            Cookie(
-                name = "refresh_token",
-                value = "",
-                path = "/",
-                maxAge = 0
-            )
-        )
+        call.response.cookies.append(clearRefreshCookie())
         
         call.respond(HttpStatusCode.OK, mapOf("message" to "Logged out"))
     }
 
     suspend fun logoutAll(call: ApplicationCall) {
-        val userId = call.request.headers["X-User-Id"]
+        val userId = call.principal<JWTPrincipal>()?.payload?.subject
         if (userId == null) {
             call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Unauthorized"))
             return
@@ -116,15 +112,52 @@ class AuthController(private val authService: AuthService) {
         
         authService.logoutAll(userId)
         
-        call.response.cookies.append(
-            Cookie(
-                name = "refresh_token",
-                value = "",
-                path = "/",
-                maxAge = 0
-            )
-        )
+        call.response.cookies.append(clearRefreshCookie())
 
         call.respond(HttpStatusCode.OK, mapOf("message" to "Logged out from all devices"))
+    }
+
+    private fun refreshCookie(value: String): Cookie {
+        return Cookie(
+            name = REFRESH_COOKIE_NAME,
+            value = value,
+            httpOnly = true,
+            secure = sessionConfig.cookieSecure,
+            path = REFRESH_COOKIE_PATH,
+            maxAge = refreshCookieMaxAgeSeconds(),
+            extensions = mapOf("SameSite" to "Lax")
+        )
+    }
+
+    private fun clearRefreshCookie(): Cookie {
+        return Cookie(
+            name = REFRESH_COOKIE_NAME,
+            value = "",
+            httpOnly = true,
+            secure = sessionConfig.cookieSecure,
+            path = REFRESH_COOKIE_PATH,
+            maxAge = 0,
+            extensions = mapOf("SameSite" to "Lax")
+        )
+    }
+
+    private fun refreshCookieMaxAgeSeconds(): Int {
+        return (sessionConfig.refreshTokenExpDays * 24 * 60 * 60)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+    }
+
+    private fun ApplicationCall.clientIpAddress(): String {
+        return request.headers["X-Forwarded-For"]
+            ?.substringBefore(",")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: request.headers["X-Real-IP"]
+            ?: request.local.remoteHost
+    }
+
+    private companion object {
+        private const val REFRESH_COOKIE_NAME = "refresh_token"
+        private const val REFRESH_COOKIE_PATH = "/api/auth"
     }
 }
