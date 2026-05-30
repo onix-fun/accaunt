@@ -33,21 +33,6 @@ const SparrowTheme = definePreset(Aura, {
 const router = setupRouter([
   {
     path: "/",
-    name: "Devices",
-    component: () => import("@/views/Dashboard.vue"),
-  },
-  {
-    path: "/device/:id",
-    name: "DeviceDetails",
-    component: () => import("@/views/DeviceDetails.vue"),
-  },
-  {
-    path: "/studio",
-    name: "Studio",
-    component: () => import("@/views/Studio.vue"),
-  },
-  {
-    path: "/settings",
     name: "Settings",
     component: () => import("@/views/Settings.vue"),
   },

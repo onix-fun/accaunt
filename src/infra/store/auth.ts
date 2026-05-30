@@ -1,10 +1,10 @@
-import { computed, ref } from 'vue';
-import { defineStore } from 'pinia';
-import type { AuthSession, User } from '@/domain';
-import { AuthService, type RegistrationStartedResponse } from '@/api/services/AuthService';
-import { apiErrorMessage } from '@/api/client';
+import { computed, ref } from "vue";
+import { defineStore } from "pinia";
+import type { AuthSession, User } from "@/domain";
+import { AuthService, type RegistrationStartedResponse } from "@/api/services/AuthService";
+import { apiErrorMessage } from "@/api/client";
 
-export const useAuthStore = defineStore('auth', () => {
+export const useAuthStore = defineStore("auth", () => {
   const currentUser = ref<User | null>(AuthService.getStoredSession());
   const sessions = ref<AuthSession[]>([]);
   const isLoading = ref(false);
@@ -13,16 +13,12 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => Boolean(currentUser.value));
   const displayName = computed(() => {
     const user = currentUser.value;
-    if (!user) return '';
-    return [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username;
+    if (!user) return "";
+    return [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username;
   });
 
   const initAuth = async () => {
     error.value = null;
-    if (!AuthService.getAccessToken()) {
-      currentUser.value = null;
-      return;
-    }
 
     isLoading.value = true;
     try {
@@ -45,7 +41,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
   };
 
-  const register = async (payload: { email: string; username: string; password: string }): Promise<RegistrationStartedResponse> => {
+  const register = async (payload: {
+    email: string;
+    username: string;
+    password: string;
+  }): Promise<RegistrationStartedResponse> => {
     isLoading.value = true;
     error.value = null;
     try {

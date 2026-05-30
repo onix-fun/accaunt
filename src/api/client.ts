@@ -1,7 +1,7 @@
-import axios from 'axios';
+import axios from "axios";
 
-export const ACCESS_TOKEN_KEY = 'sparrow.profile.access_token';
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8088/api').replace(/\/$/, '');
+export const ACCESS_TOKEN_KEY = "sparrow.profile.access_token";
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 export const DOMAIN_BASE_URL = `${API_BASE_URL}/domain`;
 export const ANALYTICS_BASE_URL = `${API_BASE_URL}/analytics`;
 export const PROFILE_BASE_URL = API_BASE_URL;
@@ -12,12 +12,12 @@ export function getStoredAccessToken(): string | null {
 
 export function contactsWsBaseUrl(): string {
   const configured = import.meta.env.VITE_CONTACTS_WS_URL as string | undefined;
-  if (configured) return configured.replace(/\/$/, '');
+  if (configured) return configured.replace(/\/$/, "");
 
   const apiUrl = new URL(API_BASE_URL, window.location.origin);
-  apiUrl.protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-  apiUrl.pathname = `${apiUrl.pathname.replace(/\/$/, '')}/contacts/ws`;
-  return apiUrl.toString().replace(/\/$/, '');
+  apiUrl.protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:";
+  apiUrl.pathname = `${apiUrl.pathname.replace(/\/$/, "")}/contacts/ws`;
+  return apiUrl.toString().replace(/\/$/, "");
 }
 
 export const domainClient = axios.create({
@@ -51,5 +51,5 @@ export function apiErrorMessage(error: unknown): string {
     const data = error.response?.data as { message?: string; error?: string } | undefined;
     return data?.message || data?.error || error.message;
   }
-  return error instanceof Error ? error.message : 'Unexpected error';
+  return error instanceof Error ? error.message : "Unexpected error";
 }

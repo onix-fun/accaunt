@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
-import { useAuthStore, useDeviceStore, useTemplateStore, useAnalyticsStore } from "@/infra/store";
+import { useRoute, useRouter } from "vue-router";
+import { useAuthStore } from "@/infra/store";
 import AppLayout from "@/infra/navigation/layouts/AppLayout.vue";
 
+const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
-const deviceStore = useDeviceStore();
-const templateStore = useTemplateStore();
-const analyticsStore = useAnalyticsStore();
 
 const authMode = ref<"login" | "register" | "confirm" | "name" | "forgot" | "reset">("login");
 const authMessage = ref("");
@@ -33,21 +31,26 @@ const isBooting = ref(false);
 
 const bootstrap = async () => {
     if (!authStore.isAuthenticated) return;
-    isBooting.value = true;
-    try {
-        await Promise.all([templateStore.fetchTemplates(), deviceStore.fetchConsumers(), analyticsStore.checkHealth()]);
-        await Promise.all([
-            deviceStore.hydrateLastEvents(),
-            ...deviceStore.consumers.map((consumer) => templateStore.ensureTemplateDetail(consumer.templateId)),
-        ]);
-    } finally {
-        isBooting.value = false;
+    // We can add profile-specific bootstrapping here if needed
+};
+
+const handleAuthSuccess = async () => {
+    const redirect = route.query.redirect;
+    const redirectUrl = Array.isArray(redirect) ? redirect[0] : redirect;
+    if (redirectUrl) {
+        window.location.href = decodeURIComponent(String(redirectUrl));
+    } else {
+        await router.push("/");
     }
 };
 
 onMounted(async () => {
     await authStore.initAuth();
-    await bootstrap();
+    if (authStore.isAuthenticated) {
+        // We are already authenticated. Do not auto-redirect back on mount unless they just logged in.
+        // Just bootstrap the app so the Settings view can render.
+        await bootstrap();
+    }
 });
 
 const login = async () => {
@@ -55,7 +58,7 @@ const login = async () => {
     try {
         await authStore.login(loginIdentifier.value, loginPassword.value);
         await bootstrap();
-        await router.push("/");
+        await handleAuthSuccess();
     } catch {
         authMessage.value = authStore.error || "Login failed";
     }
@@ -92,7 +95,7 @@ const completeNameStep = async () => {
         await authStore.updateProfile(nameForm.value);
         authMode.value = "login";
         await bootstrap();
-        await router.push("/");
+        await handleAuthSuccess();
     } catch {
         authMessage.value = authStore.error || "Profile update failed";
     }
@@ -297,7 +300,7 @@ const submitResetPassword = async () => {
 
     <div v-else-if="isBooting" class="boot-screen">
         <div class="spinner"></div>
-        <span>Connecting to Sparrow services</span>
+        <span>Loading...</span>
     </div>
 
     <AppLayout v-else>
