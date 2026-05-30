@@ -6,6 +6,7 @@ import { apiErrorMessage } from "@/api/client";
 
 export const useAuthStore = defineStore("auth", () => {
   const currentUser = ref<User | null>(AuthService.getStoredSession());
+  const storedAccounts = ref<User[]>(AuthService.getStoredAccounts());
   const sessions = ref<AuthSession[]>([]);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
@@ -17,15 +18,25 @@ export const useAuthStore = defineStore("auth", () => {
     return [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username;
   });
 
+  const syncAccounts = () => {
+    storedAccounts.value = AuthService.getStoredAccounts();
+  };
+
   const initAuth = async () => {
     error.value = null;
 
     isLoading.value = true;
     try {
       currentUser.value = await AuthService.refresh();
+      syncAccounts();
     } finally {
       isLoading.value = false;
     }
+  };
+
+  const switchAccount = async (userId: string) => {
+    AuthService.switchAccount(userId);
+    await initAuth();
   };
 
   const login = async (identifier: string, password: string) => {
@@ -33,6 +44,7 @@ export const useAuthStore = defineStore("auth", () => {
     error.value = null;
     try {
       currentUser.value = await AuthService.login({ identifier, password });
+      syncAccounts();
     } catch (cause) {
       error.value = apiErrorMessage(cause);
       throw cause;
@@ -63,6 +75,7 @@ export const useAuthStore = defineStore("auth", () => {
     error.value = null;
     try {
       currentUser.value = await AuthService.confirmRegistration(email, code);
+      syncAccounts();
       return currentUser.value;
     } catch (cause) {
       error.value = apiErrorMessage(cause);
@@ -87,15 +100,18 @@ export const useAuthStore = defineStore("auth", () => {
 
   const updateProfile = async (payload: { email?: string; firstName?: string; lastName?: string; bio?: string }) => {
     currentUser.value = await AuthService.updateProfile(payload);
+    syncAccounts();
   };
 
   const uploadAvatar = async (file: File) => {
     currentUser.value = await AuthService.uploadAvatar(file);
+    syncAccounts();
   };
 
   const verifyEmail = async (code: string) => {
     await AuthService.verifyEmail(code);
     currentUser.value = await AuthService.getMe();
+    syncAccounts();
   };
 
   const resendVerification = async () => {
@@ -121,19 +137,22 @@ export const useAuthStore = defineStore("auth", () => {
 
   const logout = async () => {
     await AuthService.logout();
-    currentUser.value = null;
+    currentUser.value = AuthService.getStoredSession();
+    syncAccounts();
     sessions.value = [];
   };
 
   const logoutAll = async () => {
     await AuthService.logoutAll();
-    currentUser.value = null;
+    currentUser.value = AuthService.getStoredSession();
+    syncAccounts();
     sessions.value = [];
   };
 
   const refreshMe = async () => {
     try {
       currentUser.value = await AuthService.getMe();
+      syncAccounts();
     } catch (cause) {
       error.value = apiErrorMessage(cause);
     } finally {
@@ -141,14 +160,21 @@ export const useAuthStore = defineStore("auth", () => {
     }
   };
 
+  const promptAddAccount = () => {
+    currentUser.value = null;
+  };
+
   return {
     currentUser,
+    storedAccounts,
     sessions,
     isAuthenticated,
     displayName,
     isLoading,
     error,
     initAuth,
+    switchAccount,
+    promptAddAccount,
     login,
     register,
     confirmRegistration,

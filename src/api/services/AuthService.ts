@@ -44,7 +44,25 @@ interface UpdateProfilePayload {
   bio?: string;
 }
 
-const USER_KEY = "sparrow.profile.user";
+const ACTIVE_USER_ID_KEY = "sparrow.profile.active_user_id";
+const USERS_KEY = "sparrow.profile.users";
+const TOKENS_KEY = "sparrow.profile.tokens";
+
+function setSharedCookie(name: string, value: string) {
+  const d = new Date();
+  d.setTime(d.getTime() + 365 * 24 * 60 * 60 * 1000);
+  document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/`;
+}
+
+function getSharedCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  if (match) return match[2];
+  return null;
+}
+
+function deleteSharedCookie(name: string) {
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/`;
+}
 
 function normalizeUser(user: UserResponse): User {
   return {
@@ -75,20 +93,55 @@ export class AuthService {
     return response.data;
   }
 
-  static getStoredSession(): User | null {
-    const stored = window.localStorage.getItem(USER_KEY);
-    const token = window.localStorage.getItem(ACCESS_TOKEN_KEY);
-    if (!stored || !token) return null;
+  static getActiveUserId(): string | null {
+    return getSharedCookie(ACTIVE_USER_ID_KEY);
+  }
+
+  static getStoredAccounts(): User[] {
+    const usersStr = window.localStorage.getItem(USERS_KEY);
+    if (!usersStr) return [];
     try {
-      return JSON.parse(stored) as User;
+      const usersMap = JSON.parse(usersStr) as Record<string, User>;
+      return Object.values(usersMap);
     } catch {
-      this.clearLocalSession();
+      return [];
+    }
+  }
+
+  static getStoredSession(): User | null {
+    const activeId = this.getActiveUserId();
+    if (!activeId) return null;
+    const usersStr = window.localStorage.getItem(USERS_KEY);
+    if (!usersStr) return null;
+    try {
+      const usersMap = JSON.parse(usersStr) as Record<string, User>;
+      return usersMap[activeId] || null;
+    } catch {
       return null;
     }
   }
 
   static getAccessToken(): string | null {
-    return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+    const activeId = this.getActiveUserId();
+    if (!activeId) return null;
+    const tokensStr = window.localStorage.getItem(TOKENS_KEY);
+    if (!tokensStr) return null;
+    try {
+      const tokensMap = JSON.parse(tokensStr) as Record<string, string>;
+      return tokensMap[activeId] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  static switchAccount(userId: string) {
+    setSharedCookie(ACTIVE_USER_ID_KEY, userId);
+    const token = this.getAccessToken();
+    if (token) {
+      window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
+    } else {
+      window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+    }
   }
 
   static async login(payload: LoginPayload): Promise<User> {
@@ -123,14 +176,19 @@ export class AuthService {
   }
 
   static async refresh(): Promise<User | null> {
+    const activeId = this.getActiveUserId();
     try {
-      const response = await profileClient.post<{ accessToken: string }>("/auth/refresh");
-      window.localStorage.setItem(ACCESS_TOKEN_KEY, response.data.accessToken);
+      const response = await profileClient.post<{ accessToken: string }>(
+        "/auth/refresh",
+        {},
+        { headers: activeId ? { "X-User-Id": activeId } : {} },
+      );
+      this.updateActiveToken(response.data.accessToken);
       const user = await this.getMe();
       this.persist(response.data.accessToken, user);
       return user;
     } catch {
-      this.clearLocalSession();
+      if (activeId) this.removeAccount(activeId);
       return null;
     }
   }
@@ -138,13 +196,13 @@ export class AuthService {
   static async getMe(): Promise<User> {
     const response = await profileClient.get<User>("/users/me");
     const user = response.data;
-    window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+    this.persistUserOnly(user);
     return user;
   }
 
   static async updateProfile(payload: UpdateProfilePayload): Promise<User> {
     const response = await profileClient.patch<User>("/users/me", payload);
-    window.localStorage.setItem(USER_KEY, JSON.stringify(response.data));
+    this.persistUserOnly(response.data);
     return response.data;
   }
 
@@ -152,7 +210,7 @@ export class AuthService {
     const form = new FormData();
     form.append("file", file);
     const response = await profileClient.post<User>("/users/me/avatar", form);
-    window.localStorage.setItem(USER_KEY, JSON.stringify(response.data));
+    this.persistUserOnly(response.data);
     return response.data;
   }
 
@@ -173,18 +231,26 @@ export class AuthService {
   }
 
   static async logout(): Promise<void> {
+    const activeId = this.getActiveUserId();
     try {
-      await profileClient.post("/auth/logout");
+      await profileClient.post(
+        "/auth/logout",
+        {},
+        {
+          headers: activeId ? { "X-User-Id": activeId } : {},
+        },
+      );
     } finally {
-      this.clearLocalSession();
+      if (activeId) this.removeAccount(activeId);
     }
   }
 
   static async logoutAll(): Promise<void> {
+    const activeId = this.getActiveUserId();
     try {
       await profileClient.post("/auth/logout-all");
     } finally {
-      this.clearLocalSession();
+      if (activeId) this.removeAccount(activeId);
     }
   }
 
@@ -197,14 +263,68 @@ export class AuthService {
     await profileClient.delete(`/sessions/${id}`);
   }
 
-  private static persist(accessToken: string, user: User) {
-    window.localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-    window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  private static updateActiveToken(accessToken: string) {
+    const activeId = this.getActiveUserId();
+    if (!activeId) return;
+    try {
+      const tokensMap = JSON.parse(window.localStorage.getItem(TOKENS_KEY) || "{}") as Record<string, string>;
+      tokensMap[activeId] = accessToken;
+      window.localStorage.setItem(TOKENS_KEY, JSON.stringify(tokensMap));
+      window.localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+    } catch {}
   }
 
-  private static clearLocalSession() {
-    window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-    window.localStorage.removeItem(USER_KEY);
-    window.localStorage.removeItem("sparrow.mock.session");
+  private static persistUserOnly(user: User) {
+    try {
+      const usersMap = JSON.parse(window.localStorage.getItem(USERS_KEY) || "{}") as Record<string, User>;
+      usersMap[user.id] = user;
+      window.localStorage.setItem(USERS_KEY, JSON.stringify(usersMap));
+    } catch {}
+  }
+
+  private static persist(accessToken: string, user: User) {
+    setSharedCookie(ACTIVE_USER_ID_KEY, user.id);
+    window.localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+
+    let usersMap: Record<string, User> = {};
+    try {
+      usersMap = JSON.parse(window.localStorage.getItem(USERS_KEY) || "{}");
+    } catch {}
+    usersMap[user.id] = user;
+    window.localStorage.setItem(USERS_KEY, JSON.stringify(usersMap));
+
+    let tokensMap: Record<string, string> = {};
+    try {
+      tokensMap = JSON.parse(window.localStorage.getItem(TOKENS_KEY) || "{}");
+    } catch {}
+    tokensMap[user.id] = accessToken;
+    window.localStorage.setItem(TOKENS_KEY, JSON.stringify(tokensMap));
+  }
+
+  private static removeAccount(userId: string) {
+    let usersMap: Record<string, User> = {};
+    try {
+      usersMap = JSON.parse(window.localStorage.getItem(USERS_KEY) || "{}");
+    } catch {}
+    delete usersMap[userId];
+    window.localStorage.setItem(USERS_KEY, JSON.stringify(usersMap));
+
+    let tokensMap: Record<string, string> = {};
+    try {
+      tokensMap = JSON.parse(window.localStorage.getItem(TOKENS_KEY) || "{}");
+    } catch {}
+    delete tokensMap[userId];
+    window.localStorage.setItem(TOKENS_KEY, JSON.stringify(tokensMap));
+
+    const activeId = this.getActiveUserId();
+    if (activeId === userId) {
+      const remainingUsers = Object.keys(usersMap);
+      if (remainingUsers.length > 0) {
+        this.switchAccount(remainingUsers[0]);
+      } else {
+        deleteSharedCookie(ACTIVE_USER_ID_KEY);
+        window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+      }
+    }
   }
 }

@@ -7,24 +7,17 @@ const backUrl = computed(() => {
     const redirect = route.query.redirect;
     if (!redirect) return null;
     const rawUrl = Array.isArray(redirect) ? redirect[0] : redirect;
-    // Ensure it's decoded properly
     return rawUrl ? decodeURIComponent(String(rawUrl)) : null;
 });
-
-const goBack = () => {
-    if (backUrl.value) {
-        window.location.href = backUrl.value;
-    }
-};
 </script>
 
 <template>
     <div class="profile-layout">
         <div class="top-nav">
-            <button v-if="backUrl" class="btn btn-ghost back-btn" type="button" aria-label="Back" @click="goBack">
+            <a v-if="backUrl" :href="backUrl" class="btn btn-ghost back-btn" aria-label="Back">
                 <i class="pi pi-arrow-left"></i>
                 <span>Back</span>
-            </button>
+            </a>
         </div>
 
         <main class="profile-content">
