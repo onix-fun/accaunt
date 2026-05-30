@@ -5,7 +5,7 @@ import { ContactsSocket } from "@/api/services/ContactsService";
 import { apiErrorMessage } from "@/api/client";
 import { useAnalyticsStore, useDeviceStore, useTemplateStore } from "@/infra/store";
 import { toCommandContracts } from "@/domain";
-import type { CommandContract, DomainType, LiveEvent } from "@/domain";
+import type { CommandContract, DomainType, LiveEvent, VariableResponse } from "@/domain";
 import { AuthService } from "@/api/services/AuthService";
 import { DeviceService } from "@/api/services/DeviceService";
 
@@ -29,9 +29,18 @@ const contracts = computed<CommandContract[]>(() => toCommandContracts(device.va
 const commandContracts = computed(() =>
     contracts.value.filter((contract) => contract.direction === "WRITE" || contract.direction === "READ_WRITE"),
 );
-const telemetryContracts = computed(() =>
-    contracts.value.filter((contract) => contract.direction === "READ" || contract.direction === "READ_WRITE"),
+const telemetryVariables = computed<VariableResponse[]>(() =>
+    device.value ? templateStore.variablesByTemplate[device.value.templateId] || [] : [],
 );
+const latestTelemetryByName = computed<Record<string, LiveEvent>>(() => {
+    const variableNames = new Set(telemetryVariables.value.map((variable) => variable.name));
+    return liveEvents.value.reduce<Record<string, LiveEvent>>((result, event) => {
+        const name = event.contract_name;
+        if (event.type !== "event" || !name || !variableNames.has(name) || result[name]) return result;
+        result[name] = event;
+        return result;
+    }, {});
+});
 
 const editingName = ref(false);
 const editName = ref("");
@@ -100,6 +109,24 @@ const payloadFor = (contract: CommandContract): unknown => {
     return { ...commandForms[contract.name] };
 };
 
+const formatTelemetryValue = (event: LiveEvent | undefined): string => {
+    if (!event) return "Waiting";
+    const payload = event.payload;
+    if (payload === null || payload === undefined) return "No value";
+    if (typeof payload !== "object") return String(payload);
+
+    const record = payload as Record<string, unknown>;
+    if ("value" in record) {
+        const unit = typeof record.unit === "string" && record.unit ? ` ${record.unit}` : "";
+        return `${String(record.value)}${unit}`;
+    }
+
+    return JSON.stringify(payload);
+};
+
+const formatTelemetryTime = (event: LiveEvent | undefined): string =>
+    event?.ts ? new Date(event.ts).toLocaleTimeString() : "live";
+
 const connectSockets = () => {
     socket?.disconnect();
     liveEvents.value = [];
@@ -118,12 +145,12 @@ const connectSockets = () => {
             socketState.value = state;
         },
     );
-    const readableContracts = telemetryContracts.value.map((contract) => contract.name);
+    const readableVariables = telemetryVariables.value.map((variable) => variable.name);
     socket.connect(
-        readableContracts.length > 0
+        readableVariables.length > 0
             ? {
                   consumer_id: device.value.id,
-                  contracts: readableContracts,
+                  contracts: readableVariables,
               }
             : undefined,
     );
@@ -153,6 +180,7 @@ const regenerateToken = async () => {
 };
 
 watch(commandContracts, initForms, { immediate: true });
+watch(telemetryVariables, () => connectSockets());
 watch(
     device,
     async (current) => {
@@ -362,11 +390,13 @@ onBeforeUnmount(() => {
                 <span class="muted">Latest values from device</span>
             </div>
             <div class="panel-body">
-                <div v-if="liveEvents.length === 0" class="empty-state">Waiting for device data...</div>
+                <div v-if="telemetryVariables.length === 0" class="empty-state">
+                    No variables available for this template.
+                </div>
                 <div v-else style="display: flex; flex-direction: column; gap: 0.5rem">
                     <div
-                        v-for="(event, index) in liveEvents.slice(0, 10)"
-                        :key="`${event.request_id || event.ts || index}`"
+                        v-for="variable in telemetryVariables"
+                        :key="variable.id"
                         style="
                             display: flex;
                             justify-content: space-between;
@@ -379,15 +409,18 @@ onBeforeUnmount(() => {
                         <div style="display: flex; align-items: center; gap: 1rem">
                             <i class="pi pi-bolt" style="color: var(--primary-color)"></i>
                             <div>
-                                <strong style="display: block">{{ event.contract_name || event.type }}</strong>
-                                <span class="muted" style="font-size: 0.875rem">{{
-                                    event.status || event.code || event.message || "event payload"
-                                }}</span>
+                                <strong style="display: block">{{ variable.name }}</strong>
+                                <span class="muted" style="font-size: 0.875rem">{{ variable.type }}</span>
                             </div>
                         </div>
-                        <span class="mono muted" style="font-size: 0.875rem">{{
-                            event.ts ? new Date(event.ts).toLocaleTimeString() : "live"
-                        }}</span>
+                        <div style="text-align: right">
+                            <strong class="mono" style="display: block">{{
+                                formatTelemetryValue(latestTelemetryByName[variable.name])
+                            }}</strong>
+                            <span class="mono muted" style="font-size: 0.875rem">{{
+                                formatTelemetryTime(latestTelemetryByName[variable.name])
+                            }}</span>
+                        </div>
                     </div>
                 </div>
             </div>
