@@ -1,8 +1,8 @@
-import { contactsWsBaseUrl, getStoredAccessToken } from '@/api/client';
-import type { LiveEvent } from '@/domain';
+import { contactsWsBaseUrl, refreshBrowserSession } from "@/api/client";
+import type { LiveEvent } from "@/domain";
 
 export interface WriteCommand {
-  type?: 'command';
+  type?: "command";
   request_id: string;
   consumer_id: string;
   contract_name: string;
@@ -10,47 +10,71 @@ export interface WriteCommand {
 }
 
 export interface ReadSubscription {
-  type?: 'subscribe' | 'unsubscribe';
+  type?: "subscribe" | "unsubscribe";
   consumer_id: string;
   contracts: string[];
 }
 
 type MessageHandler = (message: LiveEvent) => void;
-type StateHandler = (state: 'connecting' | 'open' | 'closed' | 'error') => void;
+type StateHandler = (state: "connecting" | "open" | "closed" | "error") => void;
 
 export class ContactsSocket {
   private socket: WebSocket | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempted = false;
+  private shouldReconnect = false;
+  private initialMessage?: ReadSubscription;
   private readonly onMessage: MessageHandler;
   private readonly onState: StateHandler;
 
-  constructor(
-    onMessage: MessageHandler,
-    onState: StateHandler,
-  ) {
+  constructor(onMessage: MessageHandler, onState: StateHandler) {
     this.onMessage = onMessage;
     this.onState = onState;
   }
 
   connect(initialMessage?: ReadSubscription): void {
     this.disconnect();
-    this.onState('connecting');
-    const url = new URL(contactsWsBaseUrl());
-    const token = getStoredAccessToken();
-    if (token) url.searchParams.set('access_token', token);
-    this.socket = new WebSocket(url.toString());
-    this.socket.addEventListener('open', () => {
-      this.onState('open');
-      if (initialMessage) this.subscribe(initialMessage);
+    this.initialMessage = initialMessage;
+    this.shouldReconnect = true;
+    this.open();
+  }
+
+  private open(): void {
+    this.onState("connecting");
+    const socket = new WebSocket(contactsWsBaseUrl());
+    this.socket = socket;
+    socket.addEventListener("open", () => {
+      this.reconnectAttempted = false;
+      this.onState("open");
+      if (this.initialMessage) this.subscribe(this.initialMessage);
     });
-    this.socket.addEventListener('message', (event) => {
+    socket.addEventListener("message", (event) => {
       try {
         this.onMessage(JSON.parse(event.data) as LiveEvent);
       } catch {
-        this.onMessage({ type: 'error', message: 'Invalid WebSocket message' });
+        this.onMessage({ type: "error", message: "Invalid WebSocket message" });
       }
     });
-    this.socket.addEventListener('close', () => this.onState('closed'));
-    this.socket.addEventListener('error', () => this.onState('error'));
+    socket.addEventListener("close", () => {
+      if (this.socket !== socket) return;
+      this.socket = null;
+      this.onState("closed");
+      this.reconnectAfterRefresh();
+    });
+    socket.addEventListener("error", () => this.onState("error"));
+  }
+
+  private reconnectAfterRefresh(): void {
+    if (!this.shouldReconnect || this.reconnectAttempted) return;
+    this.reconnectAttempted = true;
+    void refreshBrowserSession()
+      .then(() => {
+        if (!this.shouldReconnect) return;
+        this.reconnectTimer = setTimeout(() => this.open(), 250);
+      })
+      .catch(() => {
+        this.shouldReconnect = false;
+      });
   }
 
   send(payload: unknown): void {
@@ -60,21 +84,25 @@ export class ContactsSocket {
   }
 
   sendCommand(command: WriteCommand): void {
-    this.send({ ...command, type: 'command' });
+    this.send({ ...command, type: "command" });
   }
 
   subscribe(subscription: ReadSubscription): void {
-    this.send({ ...subscription, type: 'subscribe' });
+    this.send({ ...subscription, type: "subscribe" });
   }
 
   unsubscribe(subscription: ReadSubscription): void {
-    this.send({ ...subscription, type: 'unsubscribe' });
+    this.send({ ...subscription, type: "unsubscribe" });
   }
 
   disconnect(): void {
+    this.shouldReconnect = false;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     if (this.socket) {
-      this.socket.close();
+      const socket = this.socket;
       this.socket = null;
+      socket.close();
     }
   }
 }

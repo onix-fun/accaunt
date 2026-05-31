@@ -1,9 +1,7 @@
-import { ACCESS_TOKEN_KEY, profileClient } from "@/api/client";
+import { profileClient } from "@/api/client";
 import type { AuthSession, User } from "@/domain";
 
-interface LoginResponse {
-  accessToken: string;
-  userId: string;
+interface BrowserAuthResponse {
   user: UserResponse;
 }
 
@@ -44,25 +42,8 @@ interface UpdateProfilePayload {
   bio?: string;
 }
 
-const ACTIVE_USER_ID_KEY = "sparrow.profile.active_user_id";
-const USERS_KEY = "sparrow.profile.users";
-const TOKENS_KEY = "sparrow.profile.tokens";
-
-function setSharedCookie(name: string, value: string) {
-  const d = new Date();
-  d.setTime(d.getTime() + 365 * 24 * 60 * 60 * 1000);
-  document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/`;
-}
-
-function getSharedCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
-  if (match) return match[2];
-  return null;
-}
-
-function deleteSharedCookie(name: string) {
-  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/`;
-}
+let currentUser: User | null = null;
+let accounts: User[] = [];
 
 function normalizeUser(user: UserResponse): User {
   return {
@@ -78,6 +59,14 @@ function normalizeUser(user: UserResponse): User {
   };
 }
 
+function rememberUser(user: User): User {
+  currentUser = user;
+  const index = accounts.findIndex((account) => account.id === user.id);
+  if (index >= 0) accounts[index] = { ...accounts[index], ...user };
+  else accounts.push(user);
+  return user;
+}
+
 export interface UserPublicDto {
   id: string;
   username: string;
@@ -88,69 +77,46 @@ export interface UserPublicDto {
 }
 
 export class AuthService {
+  static async isUsernameAvailable(username: string): Promise<boolean> {
+    const response = await profileClient.get<{ available: boolean }>("/auth/username-available", {
+      params: { username },
+    });
+    return response.data.available;
+  }
+
   static async searchUsers(query: string): Promise<UserPublicDto[]> {
     const response = await profileClient.get<UserPublicDto[]>("/search/search", { params: { q: query } });
     return response.data;
   }
 
-  static getActiveUserId(): string | null {
-    return getSharedCookie(ACTIVE_USER_ID_KEY);
-  }
-
   static getStoredAccounts(): User[] {
-    const usersStr = window.localStorage.getItem(USERS_KEY);
-    if (!usersStr) return [];
-    try {
-      const usersMap = JSON.parse(usersStr) as Record<string, User>;
-      return Object.values(usersMap);
-    } catch {
-      return [];
-    }
+    return [...accounts];
   }
 
   static getStoredSession(): User | null {
-    const activeId = this.getActiveUserId();
-    if (!activeId) return null;
-    const usersStr = window.localStorage.getItem(USERS_KEY);
-    if (!usersStr) return null;
-    try {
-      const usersMap = JSON.parse(usersStr) as Record<string, User>;
-      return usersMap[activeId] || null;
-    } catch {
-      return null;
-    }
+    return currentUser;
   }
 
-  static getAccessToken(): string | null {
-    const activeId = this.getActiveUserId();
-    if (!activeId) return null;
-    const tokensStr = window.localStorage.getItem(TOKENS_KEY);
-    if (!tokensStr) return null;
-    try {
-      const tokensMap = JSON.parse(tokensStr) as Record<string, string>;
-      return tokensMap[activeId] || null;
-    } catch {
-      return null;
-    }
+  static async loadAccounts(): Promise<User[]> {
+    const response = await profileClient.get<UserResponse[]>("/auth/accounts");
+    accounts = response.data.map(normalizeUser);
+    return this.getStoredAccounts();
   }
 
-  static switchAccount(userId: string) {
-    setSharedCookie(ACTIVE_USER_ID_KEY, userId);
-    const token = this.getAccessToken();
-    if (token) {
-      window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
-    } else {
-      window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-    }
+  static async switchAccount(userId: string): Promise<User> {
+    const response = await profileClient.post<BrowserAuthResponse>("/auth/switch", { userId });
+    const user = rememberUser(normalizeUser(response.data.user));
+    await this.loadAccounts();
+    return user;
   }
 
   static async login(payload: LoginPayload): Promise<User> {
-    const response = await profileClient.post<LoginResponse>("/auth/login", {
+    const response = await profileClient.post<BrowserAuthResponse>("/auth/login", {
       ...payload,
       deviceId: window.navigator.userAgent,
     });
-    const user = normalizeUser(response.data.user);
-    this.persist(response.data.accessToken, user);
+    const user = rememberUser(normalizeUser(response.data.user));
+    await this.loadAccounts();
     return user;
   }
 
@@ -160,13 +126,13 @@ export class AuthService {
   }
 
   static async confirmRegistration(email: string, code: string): Promise<User> {
-    const response = await profileClient.post<LoginResponse>("/auth/confirm-registration", {
+    const response = await profileClient.post<BrowserAuthResponse>("/auth/confirm-registration", {
       email,
       code,
       deviceId: window.navigator.userAgent,
     });
-    const user = normalizeUser(response.data.user);
-    this.persist(response.data.accessToken, user);
+    const user = rememberUser(normalizeUser(response.data.user));
+    await this.loadAccounts();
     return user;
   }
 
@@ -176,42 +142,35 @@ export class AuthService {
   }
 
   static async refresh(): Promise<User | null> {
-    const activeId = this.getActiveUserId();
     try {
-      const response = await profileClient.post<{ accessToken: string }>(
-        "/auth/refresh",
-        {},
-        { headers: activeId ? { "X-User-Id": activeId } : {} },
-      );
-      this.updateActiveToken(response.data.accessToken);
-      const user = await this.getMe();
-      this.persist(response.data.accessToken, user);
+      const response = await profileClient.post<BrowserAuthResponse>("/auth/refresh");
+      const user = rememberUser(normalizeUser(response.data.user));
+      await this.loadAccounts();
       return user;
     } catch {
-      if (activeId) this.removeAccount(activeId);
+      currentUser = null;
+      await this.loadAccounts().catch(() => {
+        accounts = [];
+      });
       return null;
     }
   }
 
   static async getMe(): Promise<User> {
     const response = await profileClient.get<User>("/users/me");
-    const user = response.data;
-    this.persistUserOnly(user);
-    return user;
+    return rememberUser(response.data);
   }
 
   static async updateProfile(payload: UpdateProfilePayload): Promise<User> {
     const response = await profileClient.patch<User>("/users/me", payload);
-    this.persistUserOnly(response.data);
-    return response.data;
+    return rememberUser(response.data);
   }
 
   static async uploadAvatar(file: File): Promise<User> {
     const form = new FormData();
     form.append("file", file);
     const response = await profileClient.post<User>("/users/me/avatar", form);
-    this.persistUserOnly(response.data);
-    return response.data;
+    return rememberUser(response.data);
   }
 
   static async verifyEmail(code: string): Promise<void> {
@@ -230,28 +189,18 @@ export class AuthService {
     await profileClient.post("/auth/reset-password", { identifier, code, newPassword });
   }
 
-  static async logout(): Promise<void> {
-    const activeId = this.getActiveUserId();
-    try {
-      await profileClient.post(
-        "/auth/logout",
-        {},
-        {
-          headers: activeId ? { "X-User-Id": activeId } : {},
-        },
-      );
-    } finally {
-      if (activeId) this.removeAccount(activeId);
-    }
+  static async logout(): Promise<User | null> {
+    await profileClient.post("/auth/logout");
+    currentUser = null;
+    await this.loadAccounts();
+    return accounts.length ? this.switchAccount(accounts[0].id) : null;
   }
 
-  static async logoutAll(): Promise<void> {
-    const activeId = this.getActiveUserId();
-    try {
-      await profileClient.post("/auth/logout-all");
-    } finally {
-      if (activeId) this.removeAccount(activeId);
-    }
+  static async logoutAll(): Promise<User | null> {
+    await profileClient.post("/auth/logout-all");
+    currentUser = null;
+    await this.loadAccounts();
+    return accounts.length ? this.switchAccount(accounts[0].id) : null;
   }
 
   static async getSessions(): Promise<AuthSession[]> {
@@ -263,68 +212,7 @@ export class AuthService {
     await profileClient.delete(`/sessions/${id}`);
   }
 
-  private static updateActiveToken(accessToken: string) {
-    const activeId = this.getActiveUserId();
-    if (!activeId) return;
-    try {
-      const tokensMap = JSON.parse(window.localStorage.getItem(TOKENS_KEY) || "{}") as Record<string, string>;
-      tokensMap[activeId] = accessToken;
-      window.localStorage.setItem(TOKENS_KEY, JSON.stringify(tokensMap));
-      window.localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-    } catch {}
-  }
-
-  private static persistUserOnly(user: User) {
-    try {
-      const usersMap = JSON.parse(window.localStorage.getItem(USERS_KEY) || "{}") as Record<string, User>;
-      usersMap[user.id] = user;
-      window.localStorage.setItem(USERS_KEY, JSON.stringify(usersMap));
-    } catch {}
-  }
-
-  private static persist(accessToken: string, user: User) {
-    setSharedCookie(ACTIVE_USER_ID_KEY, user.id);
-    window.localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-
-    let usersMap: Record<string, User> = {};
-    try {
-      usersMap = JSON.parse(window.localStorage.getItem(USERS_KEY) || "{}");
-    } catch {}
-    usersMap[user.id] = user;
-    window.localStorage.setItem(USERS_KEY, JSON.stringify(usersMap));
-
-    let tokensMap: Record<string, string> = {};
-    try {
-      tokensMap = JSON.parse(window.localStorage.getItem(TOKENS_KEY) || "{}");
-    } catch {}
-    tokensMap[user.id] = accessToken;
-    window.localStorage.setItem(TOKENS_KEY, JSON.stringify(tokensMap));
-  }
-
-  private static removeAccount(userId: string) {
-    let usersMap: Record<string, User> = {};
-    try {
-      usersMap = JSON.parse(window.localStorage.getItem(USERS_KEY) || "{}");
-    } catch {}
-    delete usersMap[userId];
-    window.localStorage.setItem(USERS_KEY, JSON.stringify(usersMap));
-
-    let tokensMap: Record<string, string> = {};
-    try {
-      tokensMap = JSON.parse(window.localStorage.getItem(TOKENS_KEY) || "{}");
-    } catch {}
-    delete tokensMap[userId];
-    window.localStorage.setItem(TOKENS_KEY, JSON.stringify(tokensMap));
-
-    const activeId = this.getActiveUserId();
-    if (activeId === userId) {
-      const remainingUsers = Object.keys(usersMap);
-      if (remainingUsers.length > 0) {
-        this.switchAccount(remainingUsers[0]);
-      } else {
-        deleteSharedCookie(ACTIVE_USER_ID_KEY);
-        window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-      }
-    }
+  static promptAddAccount(): void {
+    currentUser = null;
   }
 }

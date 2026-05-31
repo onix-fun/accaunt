@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/infra/store";
 import AppLayout from "@/infra/navigation/layouts/AppLayout.vue";
 import { AuthService } from "@/api/services/AuthService";
+import { trustedRedirectUrl } from "@/infra/navigation/trustedRedirect";
 
 const route = useRoute();
 const router = useRouter();
@@ -42,8 +43,7 @@ watch(
         isCheckingUsername.value = true;
         usernameTimeout = setTimeout(async () => {
             try {
-                const results = await AuthService.searchUsers(val);
-                isUsernameTaken.value = results.some((u) => u.username.toLowerCase() === val.toLowerCase());
+                isUsernameTaken.value = !(await AuthService.isUsernameAvailable(val));
             } catch {
                 // Ignore errors
             } finally {
@@ -70,13 +70,13 @@ const bootstrap = async () => {
 };
 
 const handleAuthSuccess = async () => {
-    const redirect = route.query.redirect;
-    const redirectUrl = Array.isArray(redirect) ? redirect[0] : redirect;
-    if (redirectUrl) {
-        window.location.href = decodeURIComponent(String(redirectUrl));
-    } else {
-        await router.push("/");
+    const target = trustedRedirectUrl(route.query.redirect);
+    if (target) {
+        window.location.href = target;
+        return;
     }
+
+    await router.push("/");
 };
 
 onMounted(async () => {

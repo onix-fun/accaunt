@@ -9,12 +9,12 @@ import io.github.smiley4.ktorswaggerui.dsl.routing.get
 import io.github.smiley4.ktorswaggerui.routing.openApiSpec
 import io.github.smiley4.ktorswaggerui.routing.swaggerUI
 import io.ktor.http.*
+import io.ktor.http.auth.HttpAuthHeader
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
 import io.ktor.server.plugins.contentnegotiation.*
-import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.plugins.requestvalidation.*
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.response.*
@@ -33,6 +33,7 @@ import profile.auth.ResetPasswordRequest
 import profile.auth.authRouting
 import profile.infrastructure.di.koinModule
 import profile.infrastructure.events.EmailEventConsumer
+import profile.infrastructure.jwt.RsaKeyLoader
 import profile.search.SearchController
 import profile.search.SearchService
 import profile.search.searchRouting
@@ -122,28 +123,20 @@ fun Application.module() {
         }
     }
 
-    install(CORS) {
-        allowMethod(HttpMethod.Options)
-        allowMethod(HttpMethod.Put)
-        allowMethod(HttpMethod.Delete)
-        allowMethod(HttpMethod.Patch)
-        allowHeader(HttpHeaders.ContentType)
-        allowHeader(HttpHeaders.Authorization)
-        
-        anyHost()
-        
-        allowCredentials = true
-        allowNonSimpleContentTypes = true
-    }
-
-    val jwtSecret = environment.config.property("identity.jwt.secret").getString()
     val jwtIssuer = environment.config.property("identity.jwt.issuer").getString()
     val jwtAudience = environment.config.property("identity.jwt.audience").getString()
+    val jwtPublicKey = RsaKeyLoader.loadPublicKey(
+        environment.config.property("identity.jwt.public_key_path").getString()
+    )
 
     install(Authentication) {
         jwt {
+            authHeader { call ->
+                call.request.parseAuthorizationHeader()
+                    ?: call.request.cookies["access_token"]?.let { HttpAuthHeader.Single("Bearer", it) }
+            }
             verifier(
-                JWT.require(Algorithm.HMAC256(jwtSecret))
+                JWT.require(Algorithm.RSA256(jwtPublicKey, null))
                     .withIssuer(jwtIssuer)
                     .withAudience(jwtAudience)
                     .build()
@@ -165,7 +158,7 @@ fun Application.module() {
                 type = AuthType.HTTP
                 scheme = AuthScheme.BEARER
                 bearerFormat = "JWT"
-                description = "Paste your access token (returned in login response)"
+                description = "Paste an API access token returned by POST /api/auth/token"
             }
         }
         tags {

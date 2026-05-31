@@ -28,12 +28,17 @@ fun koinModule(config: ApplicationConfig) = module {
         jwt = JwtConfig(
             issuer = config.property("identity.jwt.issuer").getString(),
             audience = config.property("identity.jwt.audience").getString(),
-            secret = config.property("identity.jwt.secret").getString(),
+            privateKeyPath = config.property("identity.jwt.private_key_path").getString(),
+            publicKeyPath = config.property("identity.jwt.public_key_path").getString(),
             accessTokenExpMinutes = config.property("identity.jwt.access_token_exp_minutes").getString().toLong()
         ),
         session = SessionConfig(
             refreshTokenExpDays = config.property("identity.session.refresh_token_exp_days").getString().toLong(),
-            cookieSecure = config.propertyOrNull("identity.session.cookie_secure")?.getString()?.toBoolean() ?: false
+            cookieSecure = config.propertyOrNull("identity.session.cookie_secure")?.getString()?.toBoolean() ?: false,
+            cookieDomain = config.propertyOrNull("identity.session.cookie_domain")
+                ?.getString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
         ),
         registration = RegistrationConfig(
             pendingTtlSeconds = config
@@ -97,7 +102,7 @@ fun koinModule(config: ApplicationConfig) = module {
     single { SessionService(get(), get()) }
 
     // 4. Controllers
-    single { AuthController(get(), get()) }
+    single { AuthController(get(), get(), get()) }
     single { UserController(get()) }
     single { SearchController(get()) }
     single { SessionController(get()) }

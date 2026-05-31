@@ -74,6 +74,15 @@ class PendingRegistrationStore(
         return emailByCodeHash[codeHash]?.value
     }
 
+    fun isUsernameReserved(username: String): Boolean {
+        val redis = redisManager.sync()
+        if (redis != null) return redis.exists(usernameKey(username)) > 0
+
+        if (!config.allowInMemoryFallback) return false
+        pruneMemory()
+        return emailByUsername.containsKey(username)
+    }
+
     fun refreshCode(email: String, codeHash: String): PendingRegistration {
         val existing = findByEmail(email) ?: throw IllegalArgumentException("Pending registration not found")
         val updated = existing.copy(codeHash = codeHash)

@@ -6,11 +6,13 @@ import io.ktor.server.config.*
 import java.util.*
 
 class JwtIssuer(config: ApplicationConfig) {
-    private val secret = config.property("identity.jwt.secret").getString()
     private val issuer = config.property("identity.jwt.issuer").getString()
     private val audience = config.property("identity.jwt.audience").getString()
     private val validityInMinutes = config.property("identity.jwt.access_token_exp_minutes").getString().toLong()
-    private val algorithm = Algorithm.HMAC256(secret)
+    private val algorithm = Algorithm.RSA256(
+        RsaKeyLoader.loadPublicKey(config.property("identity.jwt.public_key_path").getString()),
+        RsaKeyLoader.loadPrivateKey(config.property("identity.jwt.private_key_path").getString())
+    )
 
     fun createToken(userId: String, sessionId: String, role: String): String {
         return JWT.create()

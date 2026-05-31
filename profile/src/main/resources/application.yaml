@@ -7,13 +7,15 @@ ktor:
 
 identity:
   jwt:
-    issuer: "$IDENTITY_JWT_ISSUER:identity-service"
-    audience: "$IDENTITY_JWT_AUDIENCE:gateway"
-    secret: "$IDENTITY_JWT_SECRET:change-me"
+    issuer: "$IDENTITY_JWT_ISSUER:account-service"
+    audience: "$IDENTITY_JWT_AUDIENCE:sparrow"
+    private_key_path: "$IDENTITY_JWT_PRIVATE_KEY_PATH:/run/secrets/account-jwt-private.pem"
+    public_key_path: "$IDENTITY_JWT_PUBLIC_KEY_PATH:/run/secrets/account-jwt-public.pem"
     access_token_exp_minutes: "$IDENTITY_ACCESS_TOKEN_EXP_MINUTES:15"
   session:
     refresh_token_exp_days: "$IDENTITY_REFRESH_TOKEN_EXP_DAYS:30"
     cookie_secure: "$IDENTITY_REFRESH_COOKIE_SECURE:false"
+    cookie_domain: "$IDENTITY_COOKIE_DOMAIN:"
   registration:
     pending_ttl_seconds: "$IDENTITY_REGISTRATION_PENDING_TTL_SECONDS:3600"
     allow_in_memory_fallback: "$IDENTITY_REGISTRATION_ALLOW_IN_MEMORY_FALLBACK:false"

@@ -224,8 +224,7 @@ class AuthService(
         val session = sessionRepository.findByTokenHash(refreshTokenHash)
             ?: throw IllegalArgumentException("Invalid refresh token")
 
-        if (session.revokedAt != null) throw IllegalArgumentException("Session revoked")
-        if (session.expiresAt.isBefore(Instant.now())) throw IllegalArgumentException("Session expired")
+        validateSession(session)
 
         val user = userRepository.findById(session.userId) ?: throw IllegalArgumentException("User not found")
         val newRefreshToken = generateRefreshToken()
@@ -238,7 +237,13 @@ class AuthService(
 
         val accessToken = jwtIssuer.createToken(user.id, session.id, user.role)
 
-        return RefreshResult(accessToken, newRefreshToken, session.id, user.id)
+        return RefreshResult(accessToken, newRefreshToken, session.id, user)
+    }
+
+    fun accountForRefreshToken(refreshToken: String): User? {
+        val session = sessionRepository.findByTokenHash(TokenHasher.hash(refreshToken)) ?: return null
+        if (session.revokedAt != null || !session.expiresAt.isAfter(Instant.now())) return null
+        return userRepository.findById(session.userId)
     }
 
     fun logout(refreshToken: String) {
@@ -249,6 +254,18 @@ class AuthService(
 
     fun logoutAll(userId: String) {
         sessionRepository.revokeAllForUser(userId)
+    }
+
+    fun isUsernameAvailable(username: String): Boolean {
+        val normalized = normalizeUsername(username)
+        if (normalized.length < 3) return false
+        return userRepository.findByUsername(normalized) == null &&
+            !pendingRegistrationStore.isUsernameReserved(normalized)
+    }
+
+    private fun validateSession(session: Session) {
+        if (session.revokedAt != null) throw IllegalArgumentException("Session revoked")
+        if (!session.expiresAt.isAfter(Instant.now())) throw IllegalArgumentException("Session expired")
     }
 
     private fun ensureUserCanBeCreated(email: String, username: String) {
@@ -294,5 +311,5 @@ data class RefreshResult(
     val accessToken: String,
     val refreshToken: String,
     val sessionId: String,
-    val userId: String
+    val user: User
 )

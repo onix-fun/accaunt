@@ -1,0 +1,67 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  file_log/account-gateway:
+    include:
+      - /var/log/sparrow/account-gateway/*.log
+    start_at: beginning
+    include_file_path: true
+    resource:
+      service.name: account-gateway
+      service.namespace: account
+
+  file_log/profile:
+    include:
+      - /var/log/sparrow/profile/*.log
+    start_at: beginning
+    include_file_path: true
+    multiline:
+      line_start_pattern: '^\d{4}-\d{2}-\d{2} '
+    resource:
+      service.name: profile
+      service.namespace: account
+
+processors:
+  batch:
+    timeout: 1s
+
+exporters:
+  otlphttp/central:
+    endpoint: ${env:CENTRAL_OTEL_EXPORTER_OTLP_ENDPOINT}
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions:
+    - health_check
+  pipelines:
+    traces:
+      receivers:
+        - otlp
+      processors:
+        - batch
+      exporters:
+        - otlphttp/central
+    metrics:
+      receivers:
+        - otlp
+      processors:
+        - batch
+      exporters:
+        - otlphttp/central
+    logs:
+      receivers:
+        - otlp
+        - file_log/account-gateway
+        - file_log/profile
+      processors:
+        - batch
+      exporters:
+        - otlphttp/central

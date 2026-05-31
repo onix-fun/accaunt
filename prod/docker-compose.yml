@@ -1,0 +1,171 @@
+services:
+  profile-gateway:
+    image: ${ACCOUNT_GATEWAY_IMAGE}:${ACCOUNT_TAG}
+    pull_policy: always
+    environment:
+      IDENTITY_JWT_PUBLIC_KEY_PATH: /run/secrets/account-jwt-public.pem
+      IDENTITY_JWT_ISSUER: account-service
+      IDENTITY_JWT_AUDIENCE: sparrow
+      SPARROW_TRUSTED_BASE_DOMAIN: ${SPARROW_TRUSTED_BASE_DOMAIN}
+      ACCOUNT_TRUSTED_PROXY_CIDRS: ${ACCOUNT_TRUSTED_PROXY_CIDRS}
+      ACCOUNT_SWAGGER_UI_ENABLED: ${ACCOUNT_SWAGGER_UI_ENABLED:-false}
+      ACCOUNT_HSTS_HEADER: ${ACCOUNT_HSTS_HEADER:-}
+      ACCOUNT_CSP: ${ACCOUNT_CSP}
+      ACCOUNT_LOGIN_RATE: ${ACCOUNT_LOGIN_RATE:-5r/m}
+      ACCOUNT_RECOVERY_RATE: ${ACCOUNT_RECOVERY_RATE:-3r/m}
+      ACCOUNT_CONFIRMATION_RATE: ${ACCOUNT_CONFIRMATION_RATE:-10r/m}
+      ACCOUNT_USERNAME_RATE: ${ACCOUNT_USERNAME_RATE:-20r/m}
+      ACCOUNT_SESSION_RATE: ${ACCOUNT_SESSION_RATE:-30r/m}
+      ACCOUNT_AVATAR_RATE: ${ACCOUNT_AVATAR_RATE:-10r/m}
+    ports:
+      - "${ACCOUNT_GATEWAY_HTTP_PORT:-8089}:8089"
+    volumes:
+      - ./secrets/account-jwt-public.pem:/run/secrets/account-jwt-public.pem:ro
+      - account_gateway_logs:/var/log/sparrow/account-gateway
+    depends_on:
+      - profile
+      - account-minio
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  profile:
+    image: ${ACCOUNT_SERVICE_IMAGE}:${ACCOUNT_TAG}
+    pull_policy: always
+    environment:
+      PROFILE_PORT: "8080"
+      IDENTITY_JWT_ISSUER: account-service
+      IDENTITY_JWT_AUDIENCE: sparrow
+      IDENTITY_JWT_PRIVATE_KEY_PATH: /run/secrets/account-jwt-private.pem
+      IDENTITY_JWT_PUBLIC_KEY_PATH: /run/secrets/account-jwt-public.pem
+      IDENTITY_ACCESS_TOKEN_EXP_MINUTES: ${IDENTITY_ACCESS_TOKEN_EXP_MINUTES:-15}
+      IDENTITY_REFRESH_TOKEN_EXP_DAYS: ${IDENTITY_REFRESH_TOKEN_EXP_DAYS:-30}
+      IDENTITY_REFRESH_COOKIE_SECURE: "true"
+      IDENTITY_COOKIE_DOMAIN: ${IDENTITY_COOKIE_DOMAIN}
+      IDENTITY_DATABASE_JDBC_URL: jdbc:postgresql://account-postgres:5432/${ACCOUNT_POSTGRES_DB}
+      IDENTITY_DATABASE_USERNAME: ${ACCOUNT_POSTGRES_USER}
+      IDENTITY_DATABASE_PASSWORD: ${ACCOUNT_POSTGRES_PASSWORD}
+      IDENTITY_REDIS_URL: ${ACCOUNT_REDIS_URL:-redis://account-redis:6379}
+      IDENTITY_SMTP_HOST: ${IDENTITY_SMTP_HOST}
+      IDENTITY_SMTP_PORT: ${IDENTITY_SMTP_PORT}
+      IDENTITY_SMTP_USERNAME: ${IDENTITY_SMTP_USERNAME:-}
+      IDENTITY_SMTP_PASSWORD: ${IDENTITY_SMTP_PASSWORD:-}
+      IDENTITY_SMTP_FROM: ${IDENTITY_SMTP_FROM}
+      IDENTITY_S3_ENDPOINT: http://account-minio:9000
+      IDENTITY_S3_PUBLIC_URL: ${IDENTITY_S3_PUBLIC_URL}
+      IDENTITY_S3_ACCESS_KEY: ${ACCOUNT_MINIO_ROOT_USER}
+      IDENTITY_S3_SECRET_KEY: ${ACCOUNT_MINIO_ROOT_PASSWORD}
+      IDENTITY_S3_BUCKET: ${IDENTITY_S3_BUCKET:-avatars}
+      JAVA_TOOL_OPTIONS: -javaagent:/otel/opentelemetry-javaagent.jar
+      OTEL_SERVICE_NAME: profile
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://account-otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: none
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=account,deployment.environment=production
+      LOG_DIR: /var/log/sparrow/profile
+    volumes:
+      - ./secrets/account-jwt-private.pem:/run/secrets/account-jwt-private.pem:ro
+      - ./secrets/account-jwt-public.pem:/run/secrets/account-jwt-public.pem:ro
+      - profile_logs:/var/log/sparrow/profile
+    depends_on:
+      account-postgres:
+        condition: service_healthy
+      account-redis:
+        condition: service_healthy
+      account-minio-init:
+        condition: service_completed_successfully
+      account-otel-collector:
+        condition: service_started
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  account-otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.151.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    environment:
+      CENTRAL_OTEL_EXPORTER_OTLP_ENDPOINT: ${CENTRAL_OTEL_EXPORTER_OTLP_ENDPOINT}
+    volumes:
+      - ../observability/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - account_gateway_logs:/var/log/sparrow/account-gateway:ro
+      - profile_logs:/var/log/sparrow/profile:ro
+    expose:
+      - "4317"
+      - "4318"
+      - "13133"
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  account-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${ACCOUNT_POSTGRES_DB}
+      POSTGRES_USER: ${ACCOUNT_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${ACCOUNT_POSTGRES_PASSWORD}
+    volumes:
+      - account_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  account-redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - account_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  account-minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${ACCOUNT_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${ACCOUNT_MINIO_ROOT_PASSWORD}
+    volumes:
+      - account_minio_data:/data
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  account-minio-init:
+    image: minio/mc:latest
+    environment:
+      MINIO_ROOT_USER: ${ACCOUNT_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${ACCOUNT_MINIO_ROOT_PASSWORD}
+      IDENTITY_S3_BUCKET: ${IDENTITY_S3_BUCKET:-avatars}
+    depends_on:
+      - account-minio
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set local http://account-minio:9000 \"$${MINIO_ROOT_USER}\" \"$${MINIO_ROOT_PASSWORD}\"; do sleep 2; done;
+      /usr/bin/mc mb -p local/\"$${IDENTITY_S3_BUCKET}\" || true;
+      /usr/bin/mc anonymous set download local/\"$${IDENTITY_S3_BUCKET}\";
+      "
+    networks:
+      - account-network
+
+volumes:
+  account_gateway_logs:
+  profile_logs:
+  account_postgres_data:
+  account_redis_data:
+  account_minio_data:
+
+networks:
+  account-network:
+    driver: bridge

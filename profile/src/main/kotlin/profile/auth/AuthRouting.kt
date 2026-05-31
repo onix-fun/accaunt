@@ -1,5 +1,6 @@
 package profile.auth
 
+import io.github.smiley4.ktorswaggerui.dsl.routing.get
 import io.github.smiley4.ktorswaggerui.dsl.routing.post
 import io.ktor.http.*
 import io.ktor.server.auth.*
@@ -21,7 +22,7 @@ fun Route.authRouting(authController: AuthController, sessionController: Session
             summary = "Confirm registration"
             description = "Creates the user account after the email verification code is confirmed and starts a session"
             request { body<ConfirmRegistrationRequest> { description = "Email and registration code" } }
-            response { code(HttpStatusCode.Created) { description = "User created and logged in"; body<AuthResponse> { } } }
+            response { code(HttpStatusCode.Created) { description = "User created and logged in"; body<BrowserAuthResponse> { } } }
         }) { authController.confirmRegistration(call) }
 
         post("/resend-registration-code", {
@@ -35,16 +36,58 @@ fun Route.authRouting(authController: AuthController, sessionController: Session
         post("/login", {
             tags = setOf("Auth")
             summary = "Login"
-            description = "Authenticates user, returns access token, sets refresh token cookie"
+            description = "Authenticates a browser user and sets HttpOnly session cookies"
             request { body<LoginRequest> { description = "Login credentials" } }
-            response { code(HttpStatusCode.OK) { description = "Login successful"; body<AuthResponse> { } } }
+            response { code(HttpStatusCode.OK) { description = "Login successful"; body<BrowserAuthResponse> { } } }
         }) { authController.login(call) }
+
+        post("/token", {
+            tags = setOf("Auth")
+            summary = "Issue API tokens"
+            description = "Authenticates an API client and returns a Bearer access token plus opaque refresh token"
+            request { body<LoginRequest> { description = "API client credentials" } }
+            response { code(HttpStatusCode.OK) { description = "Token pair issued"; body<ApiTokenResponse> { } } }
+        }) { authController.token(call) }
+
+        post("/token/refresh", {
+            tags = setOf("Auth")
+            summary = "Refresh API tokens"
+            description = "Rotates an API refresh token and returns a new token pair"
+            request { body<TokenRefreshRequest> { description = "Opaque API refresh token" } }
+            response { code(HttpStatusCode.OK) { description = "Token pair rotated"; body<ApiTokenResponse> { } } }
+        }) { authController.tokenRefresh(call) }
+
+        get("/csrf", {
+            tags = setOf("Auth")
+            summary = "Initialize browser CSRF protection"
+            response { code(HttpStatusCode.OK) { description = "CSRF token issued"; body<CsrfResponse> { } } }
+        }) { authController.csrf(call) }
+
+        get("/username-available", {
+            tags = setOf("Auth")
+            summary = "Check username availability"
+            request { queryParameter<String>("username") { description = "Username to check" } }
+            response { code(HttpStatusCode.OK) { description = "Username availability"; body<UsernameAvailabilityResponse> { } } }
+        }) { authController.usernameAvailable(call) }
+
+        get("/accounts", {
+            tags = setOf("Auth")
+            summary = "List browser accounts"
+            response { code(HttpStatusCode.OK) { description = "Available browser accounts"; body<List<BrowserAccountDto>> { } } }
+        }) { authController.accounts(call) }
+
+        post("/switch", {
+            tags = setOf("Auth")
+            summary = "Switch browser account"
+            request { body<SwitchAccountRequest> { description = "Account to activate" } }
+            response { code(HttpStatusCode.OK) { description = "Account activated"; body<BrowserAuthResponse> { } } }
+        }) { authController.switchAccount(call) }
 
         post("/refresh", {
             tags = setOf("Auth")
-            summary = "Refresh access token"
-            description = "Uses refresh token from cookie to issue a new access token"
-            response { code(HttpStatusCode.OK) { description = "New access token issued" } }
+            summary = "Refresh browser session"
+            description = "Uses the active account refresh cookie to rotate browser session cookies"
+            response { code(HttpStatusCode.OK) { description = "Browser session refreshed"; body<BrowserAuthResponse> { } } }
         }) { authController.refresh(call) }
 
         authenticate {

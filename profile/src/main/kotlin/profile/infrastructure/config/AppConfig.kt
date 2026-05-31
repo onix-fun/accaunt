@@ -13,13 +13,15 @@ data class AppConfig(
 data class JwtConfig(
     val issuer: String,
     val audience: String,
-    val secret: String,
+    val privateKeyPath: String,
+    val publicKeyPath: String,
     val accessTokenExpMinutes: Long
 )
 
 data class SessionConfig(
     val refreshTokenExpDays: Long,
-    val cookieSecure: Boolean
+    val cookieSecure: Boolean,
+    val cookieDomain: String?
 )
 
 data class RegistrationConfig(

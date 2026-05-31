@@ -36,15 +36,18 @@ fun Route.userRouting(userController: UserController) {
             }) { userController.uploadAvatar(call) }
         }
 
-        get("/{id}", {
-            tags = setOf("Users")
-            summary = "Get user by ID"
-            description = "Returns public profile of any user"
-            request { pathParameter<String>("id") { description = "User UUID" } }
-            response {
-                code(HttpStatusCode.OK) { description = "Public user profile"; body<UserPublicDto> { } }
-                code(HttpStatusCode.NotFound) { description = "User not found" }
-            }
-        }) { userController.getById(call) }
+        authenticate {
+            get("/{id}", {
+                tags = setOf("Users")
+                securitySchemeNames("BearerToken")
+                summary = "Get user by ID"
+                description = "Returns public user fields to authenticated clients"
+                request { pathParameter<String>("id") { description = "User UUID" } }
+                response {
+                    code(HttpStatusCode.OK) { description = "Public user profile"; body<UserPublicDto> { } }
+                    code(HttpStatusCode.NotFound) { description = "User not found" }
+                }
+            }) { userController.getById(call) }
+        }
     }
 }

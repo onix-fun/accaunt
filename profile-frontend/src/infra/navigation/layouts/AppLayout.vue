@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRoute } from "vue-router";
+import { trustedRedirectUrl } from "@/infra/navigation/trustedRedirect";
 
 const route = useRoute();
 const backUrl = computed(() => {
-    const redirect = route.query.redirect;
-    if (!redirect) return null;
-    const rawUrl = Array.isArray(redirect) ? redirect[0] : redirect;
-    return rawUrl ? decodeURIComponent(String(rawUrl)) : null;
+    return trustedRedirectUrl(route.query.redirect);
 });
 </script>
 

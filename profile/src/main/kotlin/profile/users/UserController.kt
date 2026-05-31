@@ -50,6 +50,7 @@ class UserController(
                 }
 
                 val fileBytes = part.streamProvider().use { it.readLimited(MAX_AVATAR_BYTES) }
+                validateAvatarSignature(fileBytes, contentType)
                 
                 user = userService.updateAvatar(userId, fileBytes, contentType)
             }
@@ -98,9 +99,28 @@ class UserController(
         return output.toByteArray()
     }
 
+    private fun validateAvatarSignature(bytes: ByteArray, contentType: String) {
+        val valid = when (contentType) {
+            "image/jpeg" -> bytes.size >= 3 &&
+                bytes[0] == 0xff.toByte() &&
+                bytes[1] == 0xd8.toByte() &&
+                bytes[2] == 0xff.toByte()
+            "image/png" -> bytes.size >= PNG_SIGNATURE.size &&
+                bytes.take(PNG_SIGNATURE.size).toByteArray().contentEquals(PNG_SIGNATURE)
+            "image/webp" -> bytes.size >= 12 &&
+                bytes.copyOfRange(0, 4).contentEquals("RIFF".toByteArray()) &&
+                bytes.copyOfRange(8, 12).contentEquals("WEBP".toByteArray())
+            else -> false
+        }
+        if (!valid) throw IllegalArgumentException("Avatar file signature does not match its content type")
+    }
+
     private companion object {
         private const val MAX_AVATAR_BYTES = 5 * 1024 * 1024
         private const val DEFAULT_BUFFER_SIZE = 8192
         private val ALLOWED_AVATAR_TYPES = setOf("image/jpeg", "image/png", "image/webp")
+        private val PNG_SIGNATURE = byteArrayOf(
+            0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
+        )
     }
 }
