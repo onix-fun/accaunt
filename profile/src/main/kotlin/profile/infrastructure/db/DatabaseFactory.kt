@@ -12,9 +12,7 @@ object DatabaseFactory {
         runFlyway(migrationDs)
         migrationDs.close()
 
-        return HikariDataSource(baseConfig(config).apply {
-            schema = "identity"
-        })
+        return HikariDataSource(runtimeConfig(config))
     }
 
     private fun baseConfig(config: PostgresConfig): HikariConfig {
@@ -26,6 +24,16 @@ object DatabaseFactory {
             isAutoCommit = false
             transactionIsolation = "TRANSACTION_REPEATABLE_READ"
             validate()
+        }
+    }
+
+    private fun runtimeConfig(config: PostgresConfig): HikariConfig {
+        return baseConfig(config).apply {
+            schema = "identity"
+            if (config.url.startsWith("jdbc:postgresql:")) {
+                addDataSourceProperty("currentSchema", "identity")
+                connectionInitSql = "SET search_path TO identity"
+            }
         }
     }
 
