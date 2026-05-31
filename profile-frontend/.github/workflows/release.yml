@@ -1,0 +1,44 @@
+name: Release frontend dist
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-dist:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Pack dist
+        run: tar -czf "frontend-dist-${GITHUB_REF_NAME}.tar.gz" -C dist .
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ github.ref_name }}
+          path: frontend-dist-${{ github.ref_name }}.tar.gz
+          if-no-files-found: error
+
+      - name: Attach dist to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: frontend-dist-${{ github.ref_name }}.tar.gz
