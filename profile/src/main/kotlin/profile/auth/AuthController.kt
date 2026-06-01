@@ -143,16 +143,16 @@ class AuthController(
     }
 
     suspend fun refresh(call: ApplicationCall) {
-        val activeUserId = call.request.cookies[ACTIVE_USER_COOKIE_NAME]?.let(::parseUserId)
-        val refreshToken = activeUserId?.let { call.request.cookies[getRefreshCookieName(it)] }
-
-        if (refreshToken == null) {
+        val browserAccount = resolveBrowserAccount(call)
+        if (browserAccount == null) {
             call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Missing refresh token cookie"))
             return
         }
 
+        val (activeUserId, refreshToken) = browserAccount
         val result = refreshBrowserAccount(refreshToken, activeUserId)
         appendBrowserRefresh(call, result)
+        clearLegacyBrowserSession(call)
         call.respond(HttpStatusCode.OK, BrowserAuthResponse(result.user.toProfileDto()))
     }
 
@@ -209,9 +209,35 @@ class AuthController(
     }
 
     private fun refreshBrowserAccount(refreshToken: String, userId: String): RefreshResult {
-        val account = authService.accountForRefreshToken(refreshToken)
+        val account = authService.accountForRefreshToken(refreshToken, allowPreviousToken = true)
         if (account?.id != userId) throw IllegalArgumentException("Account session mismatch")
-        return authService.refresh(refreshToken)
+        return authService.refresh(refreshToken, allowPreviousToken = true)
+    }
+
+    private fun resolveBrowserAccount(call: ApplicationCall): Pair<String, String>? {
+        val refreshTokens = requestRefreshTokens(call)
+        val preferredIds = listOfNotNull(
+            call.request.cookies[ACTIVE_USER_COOKIE_NAME]?.let(::parseUserId),
+            call.request.cookies[LEGACY_ACTIVE_USER_COOKIE_NAME]?.let(::parseUserId)
+        )
+
+        preferredIds.forEach { userId ->
+            refreshTokens[userId]?.let { token ->
+                if (authService.accountForRefreshToken(token, allowPreviousToken = true)?.id == userId) {
+                    return userId to token
+                }
+            }
+        }
+
+        refreshTokens.forEach { (userId, token) ->
+            if (authService.accountForRefreshToken(token, allowPreviousToken = true)?.id == userId) {
+                return userId to token
+            }
+        }
+
+        val legacyRefreshToken = call.request.cookies[LEGACY_REFRESH_COOKIE_NAME] ?: return null
+        val legacyAccount = authService.accountForRefreshToken(legacyRefreshToken, allowPreviousToken = true) ?: return null
+        return legacyAccount.id to legacyRefreshToken
     }
 
     private fun requireUserId(value: String): String {
@@ -251,10 +277,11 @@ class AuthController(
     private fun accessCookie(value: String) = browserCookie(
         name = ACCESS_COOKIE_NAME,
         value = value,
-        maxAge = accessCookieMaxAgeSeconds()
+        maxAge = accessCookieMaxAgeSeconds(),
+        sameSite = "Strict"
     )
 
-    private fun clearAccessCookie() = browserCookie(name = ACCESS_COOKIE_NAME, value = "", maxAge = 0)
+    private fun clearAccessCookie() = browserCookie(name = ACCESS_COOKIE_NAME, value = "", maxAge = 0, sameSite = "Strict")
 
     private fun activeUserCookie(userId: String) = browserCookie(
         name = ACTIVE_USER_COOKIE_NAME,
@@ -264,9 +291,30 @@ class AuthController(
 
     private fun clearActiveUserCookie() = browserCookie(name = ACTIVE_USER_COOKIE_NAME, value = "", maxAge = 0)
 
-    private fun csrfCookie(value: String) = browserCookie(name = CSRF_COOKIE_NAME, value = value)
+    private fun clearLegacyBrowserSession(call: ApplicationCall) {
+        call.response.cookies.append(legacyRefreshCookie(value = "", maxAge = 0))
+        call.response.cookies.append(browserCookie(name = LEGACY_ACTIVE_USER_COOKIE_NAME, value = "", maxAge = 0))
+    }
 
-    private fun browserCookie(name: String, value: String, maxAge: Int? = null): Cookie {
+    private fun legacyRefreshCookie(value: String, maxAge: Int) = Cookie(
+        name = LEGACY_REFRESH_COOKIE_NAME,
+        value = value,
+        httpOnly = true,
+        secure = sessionConfig.cookieSecure,
+        domain = sessionConfig.cookieDomain,
+        path = REFRESH_COOKIE_PATH,
+        maxAge = maxAge,
+        extensions = mapOf("SameSite" to "Strict")
+    )
+
+    private fun csrfCookie(value: String) = browserCookie(
+        name = CSRF_COOKIE_NAME,
+        value = value,
+        maxAge = refreshCookieMaxAgeSeconds(),
+        sameSite = "Strict"
+    )
+
+    private fun browserCookie(name: String, value: String, maxAge: Int? = null, sameSite: String = "Lax"): Cookie {
         return Cookie(
             name = name,
             value = value,
@@ -275,7 +323,7 @@ class AuthController(
             domain = sessionConfig.cookieDomain,
             path = "/",
             maxAge = maxAge,
-            extensions = mapOf("SameSite" to "Strict")
+            extensions = mapOf("SameSite" to sameSite)
         )
     }
 
@@ -326,6 +374,8 @@ class AuthController(
         private const val REFRESH_COOKIE_PATH = "/api/auth"
         private const val ACCESS_COOKIE_NAME = "access_token"
         private const val ACTIVE_USER_COOKIE_NAME = "active_user"
+        private const val LEGACY_REFRESH_COOKIE_NAME = "refresh_token"
+        private const val LEGACY_ACTIVE_USER_COOKIE_NAME = "sparrow.profile.active_user_id"
         private const val CSRF_COOKIE_NAME = "csrf_token"
     }
 }

@@ -477,10 +477,6 @@ label.field {
   align-items: center;
 }
 
-.contract-edit-row {
-  grid-template-columns: minmax(120px, 1.2fr) 130px 120px 120px minmax(150px, 1fr) auto auto;
-}
-
 .filters-grid {
   display: grid;
   grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(140px, 1fr));
@@ -752,4 +748,3 @@ label.field {
   margin-top: 0.25rem;
   font-weight: 500;
 }
-

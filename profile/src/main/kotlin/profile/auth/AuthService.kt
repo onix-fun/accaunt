@@ -219,9 +219,13 @@ class AuthService(
         return LoginResult(accessToken, refreshToken, session.id, user)
     }
 
-    fun refresh(refreshToken: String): RefreshResult {
+    fun refresh(refreshToken: String, allowPreviousToken: Boolean = false): RefreshResult {
         val refreshTokenHash = TokenHasher.hash(refreshToken)
-        val session = sessionRepository.findByTokenHash(refreshTokenHash)
+        val session = if (allowPreviousToken) {
+            sessionRepository.findByTokenHashWithGrace(refreshTokenHash)
+        } else {
+            sessionRepository.findByTokenHash(refreshTokenHash)
+        }
             ?: throw IllegalArgumentException("Invalid refresh token")
 
         validateSession(session)
@@ -231,7 +235,7 @@ class AuthService(
         val newRefreshTokenHash = TokenHasher.hash(newRefreshToken)
         val newExpiresAt = Instant.now().plus(sessionConfig.refreshTokenExpDays, ChronoUnit.DAYS)
 
-        if (!sessionRepository.rotateToken(session.id, refreshTokenHash, newRefreshTokenHash, newExpiresAt)) {
+        if (!sessionRepository.rotateToken(session.id, refreshTokenHash, newRefreshTokenHash, newExpiresAt, allowPreviousToken)) {
             throw IllegalArgumentException("Invalid refresh token")
         }
 
@@ -240,8 +244,13 @@ class AuthService(
         return RefreshResult(accessToken, newRefreshToken, session.id, user)
     }
 
-    fun accountForRefreshToken(refreshToken: String): User? {
-        val session = sessionRepository.findByTokenHash(TokenHasher.hash(refreshToken)) ?: return null
+    fun accountForRefreshToken(refreshToken: String, allowPreviousToken: Boolean = false): User? {
+        val refreshTokenHash = TokenHasher.hash(refreshToken)
+        val session = if (allowPreviousToken) {
+            sessionRepository.findByTokenHashWithGrace(refreshTokenHash)
+        } else {
+            sessionRepository.findByTokenHash(refreshTokenHash)
+        } ?: return null
         if (session.revokedAt != null || !session.expiresAt.isAfter(Instant.now())) return null
         return userRepository.findById(session.userId)
     }

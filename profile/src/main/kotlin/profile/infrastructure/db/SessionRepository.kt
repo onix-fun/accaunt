@@ -8,6 +8,8 @@ data class Session(
     val id: String,
     val userId: String,
     val refreshTokenHash: String,
+    val previousRefreshTokenHash: String? = null,
+    val refreshTokenRotatedAt: java.time.Instant? = null,
     val deviceId: String? = null,
     val userAgent: String? = null,
     val ipAddress: String? = null,
@@ -19,11 +21,23 @@ data class Session(
 
 class SessionRepository(private val dataSource: DataSource) {
     companion object {
+        private const val REFRESH_TOKEN_GRACE_SECONDS = 30L
         private const val CREATE_SQL = """
             INSERT INTO sessions (id, user_id, refresh_token_hash, device_id, user_agent, ip_address, expires_at, last_used_at, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         private const val FIND_BY_TOKEN_HASH_SQL = "SELECT * FROM sessions WHERE refresh_token_hash = ? AND revoked_at IS NULL"
+        private const val FIND_BY_TOKEN_HASH_WITH_GRACE_SQL = """
+            SELECT * FROM sessions
+            WHERE (
+                refresh_token_hash = ?
+                OR (
+                    previous_refresh_token_hash = ?
+                    AND refresh_token_rotated_at > ?
+                )
+            )
+            AND revoked_at IS NULL
+        """
         private const val FIND_BY_USER_ID_SQL = "SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP"
         private const val FIND_ACTIVE_BY_IDS_SQL = "SELECT * FROM sessions WHERE id IN (%s) AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP"
         private const val REVOKE_SQL = "UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?"
@@ -31,8 +45,32 @@ class SessionRepository(private val dataSource: DataSource) {
         private const val UPDATE_EXPIRATION_SQL = "UPDATE sessions SET expires_at = ?, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         private const val ROTATE_TOKEN_SQL = """
             UPDATE sessions
-            SET refresh_token_hash = ?, expires_at = ?, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            SET previous_refresh_token_hash = refresh_token_hash,
+                refresh_token_hash = ?,
+                refresh_token_rotated_at = CURRENT_TIMESTAMP,
+                expires_at = ?,
+                last_used_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND refresh_token_hash = ? AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+        """
+        private const val ROTATE_TOKEN_WITH_GRACE_SQL = """
+            UPDATE sessions
+            SET previous_refresh_token_hash = refresh_token_hash,
+                refresh_token_hash = ?,
+                refresh_token_rotated_at = CURRENT_TIMESTAMP,
+                expires_at = ?,
+                last_used_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND (
+                  refresh_token_hash = ?
+                  OR (
+                      previous_refresh_token_hash = ?
+                      AND refresh_token_rotated_at > ?
+                  )
+              )
+              AND revoked_at IS NULL
+              AND expires_at > CURRENT_TIMESTAMP
         """
         private const val FIND_BY_ID_SQL = "SELECT * FROM sessions WHERE id = ?"
     }
@@ -59,6 +97,19 @@ class SessionRepository(private val dataSource: DataSource) {
         dataSource.connection.use { conn ->
             conn.prepareStatement(FIND_BY_TOKEN_HASH_SQL).use { stmt ->
                 stmt.setString(1, hash)
+                val rs = stmt.executeQuery()
+                if (rs.next()) return mapRow(rs)
+            }
+        }
+        return null
+    }
+
+    fun findByTokenHashWithGrace(hash: String): Session? {
+        dataSource.connection.use { conn ->
+            conn.prepareStatement(FIND_BY_TOKEN_HASH_WITH_GRACE_SQL).use { stmt ->
+                stmt.setString(1, hash)
+                stmt.setString(2, hash)
+                stmt.setTimestamp(3, java.sql.Timestamp.from(java.time.Instant.now().minusSeconds(REFRESH_TOKEN_GRACE_SECONDS)))
                 val rs = stmt.executeQuery()
                 if (rs.next()) return mapRow(rs)
             }
@@ -123,13 +174,27 @@ class SessionRepository(private val dataSource: DataSource) {
         }
     }
 
-    fun rotateToken(sessionId: String, oldTokenHash: String, newTokenHash: String, expiresAt: java.time.Instant): Boolean {
+    fun rotateToken(
+        sessionId: String,
+        oldTokenHash: String,
+        newTokenHash: String,
+        expiresAt: java.time.Instant,
+        allowPreviousToken: Boolean = false
+    ): Boolean {
         dataSource.connection.use { conn ->
-            val updated = conn.prepareStatement(ROTATE_TOKEN_SQL).use { stmt ->
+            val sql = if (allowPreviousToken) ROTATE_TOKEN_WITH_GRACE_SQL else ROTATE_TOKEN_SQL
+            val updated = conn.prepareStatement(sql).use { stmt ->
                 stmt.setString(1, newTokenHash)
                 stmt.setTimestamp(2, java.sql.Timestamp.from(expiresAt))
                 stmt.setObject(3, UUID.fromString(sessionId))
                 stmt.setString(4, oldTokenHash)
+                if (allowPreviousToken) {
+                    stmt.setString(5, oldTokenHash)
+                    stmt.setTimestamp(
+                        6,
+                        java.sql.Timestamp.from(java.time.Instant.now().minusSeconds(REFRESH_TOKEN_GRACE_SECONDS))
+                    )
+                }
                 stmt.executeUpdate()
             }
             conn.commit()
@@ -153,6 +218,8 @@ class SessionRepository(private val dataSource: DataSource) {
             id = rs.getObject("id").toString(),
             userId = rs.getObject("user_id").toString(),
             refreshTokenHash = rs.getString("refresh_token_hash"),
+            previousRefreshTokenHash = rs.getString("previous_refresh_token_hash"),
+            refreshTokenRotatedAt = rs.getTimestamp("refresh_token_rotated_at")?.toInstant(),
             deviceId = rs.getString("device_id"),
             userAgent = rs.getString("user_agent"),
             ipAddress = rs.getString("ip_address"),

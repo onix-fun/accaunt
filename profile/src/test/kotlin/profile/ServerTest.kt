@@ -205,7 +205,11 @@ class ServerTest {
         val oldRefreshResponse = client.post("/api/auth/refresh") {
             header(HttpHeaders.Cookie, listOf(cookiePair(cookie), cookiePair(activeCookie)).joinToString("; "))
         }
-        assertEquals(HttpStatusCode.BadRequest, oldRefreshResponse.status)
+        assertEquals(HttpStatusCode.OK, oldRefreshResponse.status)
+        assertNotNull(
+            cookieWithPrefix(oldRefreshResponse, "refresh_token_$userId="),
+            "Browser refresh should recover when a concurrent request reused the previous cookie"
+        )
 
         // 5. API clients receive a distinct Bearer token pair and rotate opaque refresh tokens.
         val apiTokenResponse = client.post("/api/auth/token") {
@@ -322,7 +326,7 @@ class ServerTest {
                 "refresh_token_$secondId=${cookiePair(firstRefresh).substringAfter("=")}; active_user=$secondId"
             )
         }
-        assertEquals(HttpStatusCode.BadRequest, mismatchedRefreshResponse.status)
+        assertEquals(HttpStatusCode.Unauthorized, mismatchedRefreshResponse.status)
 
         val switchResponse = client.post("/api/auth/switch") {
             contentType(ContentType.Application.Json)

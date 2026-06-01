@@ -39,6 +39,7 @@ export const profileClient = axios.create({
 
 let csrfToken: string | null = null;
 let csrfRequest: Promise<string> | null = null;
+let csrfRefreshRequest: Promise<string> | null = null;
 let sessionRefreshRequest: Promise<void> | null = null;
 
 function isUnsafeMethod(method?: string): boolean {
@@ -59,6 +60,23 @@ export async function initializeCsrfToken(): Promise<string> {
       });
   }
   return csrfRequest;
+}
+
+function csrfHeader(config: { headers?: unknown }): string | undefined {
+  const headers = config.headers as { get?: (name: string) => unknown; [key: string]: unknown } | undefined;
+  const value = headers?.get ? headers.get("X-CSRF-Token") : headers?.["X-CSRF-Token"];
+  return typeof value === "string" ? value : undefined;
+}
+
+async function refreshCsrfToken(staleToken?: string): Promise<string> {
+  if (csrfToken && staleToken && csrfToken !== staleToken) return csrfToken;
+  if (!csrfRefreshRequest) {
+    csrfToken = null;
+    csrfRefreshRequest = initializeCsrfToken().finally(() => {
+      csrfRefreshRequest = null;
+    });
+  }
+  return csrfRefreshRequest;
 }
 
 export async function refreshBrowserSession(): Promise<void> {
@@ -84,7 +102,19 @@ export async function refreshBrowserSession(): Promise<void> {
   client.interceptors.response.use(
     (response) => response,
     async (error) => {
-      const config = error.config as (typeof error.config & { _sessionRetry?: boolean }) | undefined;
+      const config = error.config as (typeof error.config & { _csrfRetry?: boolean; _sessionRetry?: boolean }) | undefined;
+      const message = (error.response?.data as { message?: string } | undefined)?.message;
+      if (
+        error.response?.status === 403 &&
+        message === "Valid CSRF token is required" &&
+        config &&
+        isUnsafeMethod(config.method) &&
+        !config._csrfRetry
+      ) {
+        config._csrfRetry = true;
+        await refreshCsrfToken(csrfHeader(config));
+        return client.request(config);
+      }
       const isAuthRequest = config?.url?.startsWith("/auth/");
       if (error.response?.status !== 401 || !config || config._sessionRetry || isAuthRequest) {
         return Promise.reject(error);
