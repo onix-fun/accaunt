@@ -8,7 +8,7 @@ receivers:
 
   file_log/account-gateway:
     include:
-      - /var/log/sparrow/account-gateway/*.log
+      - /var/log/account/account-gateway/*.log
     start_at: beginning
     include_file_path: true
     resource:
@@ -17,7 +17,7 @@ receivers:
 
   file_log/profile:
     include:
-      - /var/log/sparrow/profile/*.log
+      - /var/log/account/profile/*.log
     start_at: beginning
     include_file_path: true
     multiline:

@@ -3,7 +3,7 @@
 secrets
 profile/target
 profile/.idea
-profile-frontend/node_modules
-profile-frontend/dist
-profile-frontend/.idea
-profile-gateway/build
+frontend/node_modules
+frontend/dist
+frontend/.idea
+gateway/build

@@ -2,7 +2,7 @@
 
 Mount the RS256 private and public keys under `prod/secrets/`. The private key is
 mounted only into `profile`; the public key is mounted into both `profile` and
-`profile-gateway`.
+`account-gateway`.
 
 External ingress terminates TLS and routes `account.<base-domain>` to port `8089`.
 Configure `ACCOUNT_TRUSTED_PROXY_CIDRS` with only ingress CIDRs. Enable HSTS after

@@ -1,10 +1,10 @@
 # Account
 
-Sparrow account boundary monorepo:
+Account boundary monorepo:
 
-- `profile/`: Kotlin identity and profile backend
-- `profile-frontend/`: Vue account UI
-- `profile-gateway/`: OpenResty public gateway for `account.<base-domain>`
+- `backend/`: Kotlin identity and profile backend
+- `frontend/`: Vue account UI
+- `gateway/`: OpenResty public gateway for `account.<base-domain>`
 
 Generate local RS256 keys and start the standalone account stack:
 
@@ -14,5 +14,5 @@ docker compose up --build
 ```
 
 The gateway listens on `http://localhost:8089`. For Vite development run the
-profile frontend separately on `http://localhost:5174`; its `/api` proxy targets
-the account gateway.
+frontend separately on `http://localhost:5174`; its `/api` proxy targets the
+account gateway.

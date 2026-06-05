@@ -1,12 +1,12 @@
 services:
-  profile-gateway:
+  account-gateway:
     image: ${ACCOUNT_GATEWAY_IMAGE}:${ACCOUNT_TAG}
     pull_policy: always
     environment:
       IDENTITY_JWT_PUBLIC_KEY_PATH: /run/secrets/account-jwt-public.pem
       IDENTITY_JWT_ISSUER: account-service
-      IDENTITY_JWT_AUDIENCE: sparrow
-      SPARROW_TRUSTED_BASE_DOMAIN: ${SPARROW_TRUSTED_BASE_DOMAIN}
+      IDENTITY_JWT_AUDIENCE: account
+      ACCOUNT_TRUSTED_BASE_DOMAIN: ${ACCOUNT_TRUSTED_BASE_DOMAIN}
       ACCOUNT_TRUSTED_PROXY_CIDRS: ${ACCOUNT_TRUSTED_PROXY_CIDRS}
       ACCOUNT_SWAGGER_UI_ENABLED: ${ACCOUNT_SWAGGER_UI_ENABLED:-false}
       ACCOUNT_HSTS_HEADER: ${ACCOUNT_HSTS_HEADER:-}
@@ -21,7 +21,7 @@ services:
       - "${ACCOUNT_GATEWAY_HTTP_PORT:-8089}:8089"
     volumes:
       - ./secrets/account-jwt-public.pem:/run/secrets/account-jwt-public.pem:ro
-      - account_gateway_logs:/var/log/sparrow/account-gateway
+      - account_gateway_logs:/var/log/account/account-gateway
     depends_on:
       - profile
       - account-minio
@@ -35,7 +35,7 @@ services:
     environment:
       PROFILE_PORT: "8080"
       IDENTITY_JWT_ISSUER: account-service
-      IDENTITY_JWT_AUDIENCE: sparrow
+      IDENTITY_JWT_AUDIENCE: account
       IDENTITY_JWT_PRIVATE_KEY_PATH: /run/secrets/account-jwt-private.pem
       IDENTITY_JWT_PUBLIC_KEY_PATH: /run/secrets/account-jwt-public.pem
       IDENTITY_ACCESS_TOKEN_EXP_MINUTES: ${IDENTITY_ACCESS_TOKEN_EXP_MINUTES:-15}
@@ -64,11 +64,11 @@ services:
       OTEL_METRICS_EXPORTER: otlp
       OTEL_LOGS_EXPORTER: none
       OTEL_RESOURCE_ATTRIBUTES: service.namespace=account,deployment.environment=production
-      LOG_DIR: /var/log/sparrow/profile
+      LOG_DIR: /var/log/account/profile
     volumes:
       - ./secrets/account-jwt-private.pem:/run/secrets/account-jwt-private.pem:ro
       - ./secrets/account-jwt-public.pem:/run/secrets/account-jwt-public.pem:ro
-      - profile_logs:/var/log/sparrow/profile
+      - profile_logs:/var/log/account/profile
     depends_on:
       account-postgres:
         condition: service_healthy
@@ -89,8 +89,8 @@ services:
       CENTRAL_OTEL_EXPORTER_OTLP_ENDPOINT: ${CENTRAL_OTEL_EXPORTER_OTLP_ENDPOINT}
     volumes:
       - ../observability/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
-      - account_gateway_logs:/var/log/sparrow/account-gateway:ro
-      - profile_logs:/var/log/sparrow/profile:ro
+      - account_gateway_logs:/var/log/account/account-gateway:ro
+      - profile_logs:/var/log/account/profile:ro
     expose:
       - "4317"
       - "4318"
