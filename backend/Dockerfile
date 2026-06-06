@@ -1,10 +1,10 @@
 FROM eclipse-temurin:23-jre
 WORKDIR /app
 
-# OpenTelemetry Java agent (if needed, should be downloaded in GH actions or base image)
-# COPY opentelemetry-javaagent.jar /otel/opentelemetry-javaagent.jar
+ARG OTEL_JAVA_AGENT_VERSION=2.27.0
+ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${OTEL_JAVA_AGENT_VERSION}/opentelemetry-javaagent.jar /otel/opentelemetry-javaagent.jar
 
-COPY target/*.jar /app/app.jar
+COPY target/*-with-dependencies.jar /app/app.jar
 
 EXPOSE 8080
 

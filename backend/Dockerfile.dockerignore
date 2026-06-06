@@ -1,5 +1,3 @@
 *
 !Dockerfile
-!build/
-!build/docker/
-!build/docker/**
+!target/
