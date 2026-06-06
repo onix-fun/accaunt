@@ -1,6 +1,8 @@
 package profile.infrastructure.redis
 
 import kotlinx.serialization.Serializable
+import profile.shared.ApiErrorCode
+import profile.shared.apiError
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -37,8 +39,8 @@ class PendingRegistrationStore(
         if (redis != null) {
             val pendingKey = pendingKey(pending.email)
             val usernameKey = usernameKey(pending.username)
-            if (redis.exists(pendingKey) > 0) throw IllegalArgumentException("Registration is already pending")
-            if (redis.exists(usernameKey) > 0) throw IllegalArgumentException("Username is already pending registration")
+            if (redis.exists(pendingKey) > 0) apiError(ApiErrorCode.AUTH_REGISTRATION_PENDING, "email")
+            if (redis.exists(usernameKey) > 0) apiError(ApiErrorCode.AUTH_REGISTRATION_PENDING, "username")
 
             redis.setex(pendingKey, ttlSeconds, json.encodeToString(pending))
             redis.setex(codeKey(pending.codeHash), ttlSeconds, pending.email)
@@ -51,8 +53,8 @@ class PendingRegistrationStore(
         }
 
         pruneMemory()
-        if (pendingByEmail.containsKey(pending.email)) throw IllegalArgumentException("Registration is already pending")
-        if (emailByUsername.containsKey(pending.username)) throw IllegalArgumentException("Username is already pending registration")
+        if (pendingByEmail.containsKey(pending.email)) apiError(ApiErrorCode.AUTH_REGISTRATION_PENDING, "email")
+        if (emailByUsername.containsKey(pending.username)) apiError(ApiErrorCode.AUTH_REGISTRATION_PENDING, "username")
         writeMemory(pending)
     }
 
@@ -63,6 +65,20 @@ class PendingRegistrationStore(
         if (!config.allowInMemoryFallback) return null
         pruneMemory()
         return pendingByEmail[email]?.value?.let { json.decodeFromString<PendingRegistration>(it) }
+    }
+
+    fun findByIdentifier(identifier: String): PendingRegistration? {
+        val normalized = identifier.trim()
+        if (normalized.contains("@")) return findByEmail(normalized.lowercase())
+        val redis = redisManager.sync()
+        if (redis != null) {
+            val email = redis.get(usernameKey(normalized)) ?: return null
+            return findByEmail(email)
+        }
+        if (!config.allowInMemoryFallback) return null
+        pruneMemory()
+        val email = emailByUsername[normalized]?.value ?: return null
+        return findByEmail(email)
     }
 
     fun findEmailByCodeHash(codeHash: String): String? {
@@ -84,7 +100,7 @@ class PendingRegistrationStore(
     }
 
     fun refreshCode(email: String, codeHash: String): PendingRegistration {
-        val existing = findByEmail(email) ?: throw IllegalArgumentException("Pending registration not found")
+        val existing = findByEmail(email) ?: apiError(ApiErrorCode.AUTH_PENDING_REGISTRATION_NOT_FOUND, "email")
         val updated = existing.copy(codeHash = codeHash)
 
         val redis = redisManager.sync()

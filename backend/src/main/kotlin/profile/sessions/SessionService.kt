@@ -3,6 +3,8 @@ package profile.sessions
 import profile.infrastructure.db.SessionRepository
 import profile.infrastructure.db.UserRepository
 import profile.users.toPublicDto
+import profile.shared.ApiErrorCode
+import profile.shared.apiError
 
 class SessionService(
     private val sessionRepository: SessionRepository,
@@ -29,8 +31,8 @@ class SessionService(
     }
 
     fun revokeSession(userId: String, sessionId: String) {
-        val session = sessionRepository.findById(sessionId) ?: throw IllegalArgumentException("Session not found")
-        if (session.userId != userId) throw IllegalArgumentException("Unauthorized to revoke this session")
+        val session = sessionRepository.findById(sessionId) ?: apiError(ApiErrorCode.SESSION_NOT_FOUND)
+        if (session.userId != userId) apiError(ApiErrorCode.SESSION_REVOKE_FORBIDDEN)
         sessionRepository.revoke(sessionId)
     }
 

@@ -7,6 +7,8 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import profile.infrastructure.config.JwtConfig
+import profile.shared.ApiErrorCode
+import profile.shared.apiError
 import profile.users.toProfileDto
 import java.security.SecureRandom
 import java.util.Base64
@@ -36,14 +38,14 @@ class AuthController(
         val userAgent = call.request.headers["User-Agent"]
         val ipAddress = call.clientIpAddress()
         val result =
-            authService.confirmRegistration(request.email, request.code, request.deviceId, userAgent, ipAddress)
+            authService.confirmRegistration(request.identifier ?: request.email.orEmpty(), request.code, request.deviceId, userAgent, ipAddress)
         appendBrowserSession(call, result)
         call.respond(HttpStatusCode.Created, BrowserAuthResponse(result.user.toProfileDto()))
     }
 
     suspend fun resendRegistrationCode(call: ApplicationCall) {
         val request = call.receive<ResendRegistrationCodeRequest>()
-        val response = authService.resendRegistrationCode(request.email)
+        val response = authService.resendRegistrationCode(request.identifier ?: request.email.orEmpty())
         call.respond(HttpStatusCode.OK, response)
     }
 
@@ -93,6 +95,22 @@ class AuthController(
         call.respond(HttpStatusCode.OK, UsernameAvailabilityResponse(authService.isUsernameAvailable(username)))
     }
 
+    suspend fun accountLookup(call: ApplicationCall) {
+        call.respond(HttpStatusCode.OK, authService.lookupAccount(call.request.queryParameters["identifier"].orEmpty()))
+    }
+
+    suspend fun requestPublicVerification(call: ApplicationCall) {
+        val request = call.receive<PublicVerificationRequest>()
+        authService.requestPublicEmailVerification(request.identifier)
+        call.respond(HttpStatusCode.OK)
+    }
+
+    suspend fun confirmPublicVerification(call: ApplicationCall) {
+        val request = call.receive<PublicVerificationConfirmRequest>()
+        authService.confirmPublicEmailVerification(request.identifier, request.code)
+        call.respond(HttpStatusCode.OK)
+    }
+
     suspend fun accounts(call: ApplicationCall) {
         val accounts = requestRefreshTokens(call)
             .mapNotNull { (userId, token) ->
@@ -107,7 +125,7 @@ class AuthController(
         val request = call.receive<SwitchAccountRequest>()
         val userId = requireUserId(request.userId)
         val refreshToken = call.request.cookies[getRefreshCookieName(userId)]
-            ?: throw IllegalArgumentException("Account session not found")
+            ?: apiError(ApiErrorCode.AUTH_SESSION_NOT_FOUND)
         val result = refreshBrowserAccount(refreshToken, userId)
         appendBrowserRefresh(call, result)
         call.respond(HttpStatusCode.OK, BrowserAuthResponse(result.user.toProfileDto()))
@@ -173,8 +191,7 @@ class AuthController(
     suspend fun refresh(call: ApplicationCall) {
         val browserAccount = resolveBrowserAccount(call)
         if (browserAccount == null) {
-            call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Missing refresh token cookie"))
-            return
+            apiError(ApiErrorCode.AUTH_SESSION_NOT_FOUND)
         }
 
         val (activeUserId, refreshToken) = browserAccount
@@ -199,8 +216,7 @@ class AuthController(
     suspend fun logoutAll(call: ApplicationCall) {
         val userId = call.principal<JWTPrincipal>()?.payload?.subject
         if (userId == null) {
-            call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Unauthorized"))
-            return
+            apiError(ApiErrorCode.AUTH_UNAUTHORIZED)
         }
 
         authService.logoutAll(userId)
@@ -237,7 +253,7 @@ class AuthController(
 
     private fun refreshBrowserAccount(refreshToken: String, userId: String): RefreshResult {
         val account = authService.accountForRefreshToken(refreshToken, allowPreviousToken = true)
-        if (account?.id != userId) throw IllegalArgumentException("Account session mismatch")
+        if (account?.id != userId) apiError(ApiErrorCode.AUTH_INVALID_REFRESH_TOKEN)
         return authService.refresh(refreshToken, allowPreviousToken = true)
     }
 
@@ -265,7 +281,7 @@ class AuthController(
     }
 
     private fun requireUserId(value: String): String {
-        return parseUserId(value) ?: throw IllegalArgumentException("Invalid account id")
+        return parseUserId(value) ?: apiError(ApiErrorCode.VALIDATION_INVALID_UUID, "userId")
     }
 
     private fun parseUserId(value: String): String? {

@@ -342,6 +342,14 @@ button:disabled {
   white-space: nowrap;
 }
 
+.account-chip-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
 .input-wrapper {
   position: relative;
   display: flex;
@@ -369,6 +377,17 @@ button:disabled {
 
 .validation-message {
   font-weight: 600;
+}
+
+.password-requirements {
+  display: grid;
+  gap: 6px;
+}
+
+.password-requirements .validation-message {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .form-message {

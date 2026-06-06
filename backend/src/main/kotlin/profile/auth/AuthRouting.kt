@@ -71,6 +71,27 @@ fun Route.authRouting(authController: AuthController, sessionController: Session
             response { code(HttpStatusCode.OK) { description = "Username availability"; body<UsernameAvailabilityResponse> { } } }
         }) { authController.usernameAvailable(call) }
 
+        get("/account-lookup", {
+            tags = setOf("Auth")
+            summary = "Lookup account before password entry"
+            request { queryParameter<String>("identifier") { description = "Email or username" } }
+            response { code(HttpStatusCode.OK) { body<AccountLookupResponse> { } } }
+        }) { authController.accountLookup(call) }
+
+        post("/public-verification/request", {
+            tags = setOf("Auth")
+            summary = "Send verification code before login"
+            request { body<PublicVerificationRequest> { } }
+            response { code(HttpStatusCode.OK) { description = "Code sent" } }
+        }) { authController.requestPublicVerification(call) }
+
+        post("/public-verification/confirm", {
+            tags = setOf("Auth")
+            summary = "Confirm email before login"
+            request { body<PublicVerificationConfirmRequest> { } }
+            response { code(HttpStatusCode.OK) { description = "Email verified" } }
+        }) { authController.confirmPublicVerification(call) }
+
         get("/accounts", {
             tags = setOf("Auth")
             summary = "List browser accounts"

@@ -24,6 +24,16 @@ export interface RegistrationStartedResponse {
   message: string;
 }
 
+export type AccountLookupState = "ACTIVE" | "NOT_FOUND" | "PENDING_REGISTRATION" | "EMAIL_UNVERIFIED" | "BLOCKED";
+
+export interface AccountLookupResponse {
+  state: AccountLookupState;
+  identifier: string;
+  email?: string | null;
+  username?: string | null;
+  avatarUrl?: string | null;
+}
+
 interface RegisterPayload {
   email: string;
   username: string;
@@ -84,6 +94,19 @@ export class AuthService {
     return response.data.available;
   }
 
+  static async lookupAccount(identifier: string): Promise<AccountLookupResponse> {
+    const response = await profileClient.get<AccountLookupResponse>("/auth/account-lookup", { params: { identifier } });
+    return response.data;
+  }
+
+  static async requestPublicVerification(identifier: string): Promise<void> {
+    await profileClient.post("/auth/public-verification/request", { identifier });
+  }
+
+  static async confirmPublicVerification(identifier: string, code: string): Promise<void> {
+    await profileClient.post("/auth/public-verification/confirm", { identifier, code });
+  }
+
   static async searchUsers(query: string): Promise<UserPublicDto[]> {
     const response = await profileClient.get<UserPublicDto[]>("/search/search", { params: { q: query } });
     return response.data;
@@ -127,7 +150,7 @@ export class AuthService {
 
   static async confirmRegistration(email: string, code: string): Promise<User> {
     const response = await profileClient.post<BrowserAuthResponse>("/auth/confirm-registration", {
-      email,
+      identifier: email,
       code,
       deviceId: window.navigator.userAgent,
     });
@@ -137,7 +160,7 @@ export class AuthService {
   }
 
   static async resendRegistrationCode(email: string): Promise<RegistrationStartedResponse> {
-    const response = await profileClient.post<RegistrationStartedResponse>("/auth/resend-registration-code", { email });
+    const response = await profileClient.post<RegistrationStartedResponse>("/auth/resend-registration-code", { identifier: email });
     return response.data;
   }
 

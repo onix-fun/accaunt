@@ -31,7 +31,7 @@ const steps = [
 
       <div class="auth-title-row">
         <button
-          v-if="flow.mode.value !== 'identifier' && flow.mode.value !== 'name'"
+          v-if="flow.mode.value !== 'identifier' && flow.mode.value !== 'name' && flow.mode.value !== 'register'"
           class="icon-button quiet"
           type="button"
           :aria-label="t('common.back')"
@@ -46,12 +46,20 @@ const steps = [
         <label class="field">
           <span>{{ t("auth.emailOrUsername") }}</span>
           <input v-model="flow.loginIdentifier.value" class="input xl" autocomplete="username" required autofocus />
+          <span v-if="flow.loginIdentifier.value && flow.identifierError.value" class="validation-message text-danger">
+            {{ flow.identifierError.value }}
+          </span>
+          <span v-else-if="flow.fieldErrors.value.identifier" class="validation-message text-danger">
+            {{ flow.fieldErrors.value.identifier }}
+          </span>
         </label>
         <div class="auth-actions split">
           <button class="link-button" type="button" @click="flow.mode.value = 'register'">
             {{ t("auth.createAccount") }}
           </button>
-          <button class="btn btn-primary" type="submit">{{ t("common.continue") }}</button>
+          <button class="btn btn-primary" type="submit" :disabled="flow.isLookupLoading.value || Boolean(flow.identifierError.value)">
+            {{ t("common.continue") }}
+          </button>
         </div>
         <button class="link-button subtle-link" type="button" @click="flow.mode.value = 'forgot'">
           {{ t("auth.forgotPassword") }}
@@ -60,7 +68,8 @@ const steps = [
 
       <form v-else-if="flow.mode.value === 'password'" class="account-form" @submit.prevent="flow.login">
         <div class="account-chip">
-          <i class="pi pi-user"></i>
+          <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
+          <i v-else class="pi pi-user"></i>
           <span>{{ flow.loginIdentifier.value }}</span>
         </div>
         <label class="field">
@@ -73,6 +82,9 @@ const steps = [
             required
             autofocus
           />
+          <span v-if="flow.fieldErrors.value.password" class="validation-message text-danger">
+            {{ flow.fieldErrors.value.password }}
+          </span>
         </label>
         <div class="auth-actions split">
           <button class="link-button" type="button" @click="flow.mode.value = 'forgot'">
@@ -100,6 +112,12 @@ const steps = [
               <i :class="flow.isUsernameTaken.value ? 'pi pi-times' : 'pi pi-check'"></i>
             </span>
           </div>
+          <span v-if="flow.registerForm.value.username && flow.registrationErrors.value.username" class="validation-message text-danger">
+            {{ flow.registrationErrors.value.username }}
+          </span>
+          <span v-else-if="flow.fieldErrors.value.username" class="validation-message text-danger">
+            {{ flow.fieldErrors.value.username }}
+          </span>
           <span
             v-if="flow.usernameCheckTouched.value && flow.registerForm.value.username && flow.isUsernameTaken.value"
             class="validation-message text-danger"
@@ -121,6 +139,12 @@ const steps = [
         <label class="field">
           <span>{{ t("auth.email") }}</span>
           <input v-model="flow.registerForm.value.email" class="input xl" type="email" autocomplete="email" required />
+          <span v-if="flow.registerForm.value.email && flow.registrationErrors.value.email" class="validation-message text-danger">
+            {{ flow.registrationErrors.value.email }}
+          </span>
+          <span v-else-if="flow.fieldErrors.value.email" class="validation-message text-danger">
+            {{ flow.fieldErrors.value.email }}
+          </span>
         </label>
         <label class="field">
           <span>{{ t("auth.password") }}</span>
@@ -132,6 +156,9 @@ const steps = [
             required
             minlength="8"
           />
+          <span v-if="flow.fieldErrors.value.password" class="validation-message text-danger">
+            {{ flow.fieldErrors.value.password }}
+          </span>
         </label>
         <label class="field">
           <span>{{ t("auth.confirmPassword") }}</span>
@@ -144,10 +171,17 @@ const steps = [
             minlength="8"
             :aria-invalid="flow.registerPasswordMismatch.value"
           />
-          <span v-if="flow.registerPasswordMismatch.value" class="validation-message text-danger">
-            {{ t("auth.passwordMismatch") }}
-          </span>
         </label>
+        <div class="password-requirements" aria-live="polite">
+          <span class="validation-message" :class="flow.registerPasswordValid.value ? 'text-success' : 'text-danger'">
+            <i :class="flow.registerPasswordValid.value ? 'pi pi-check' : 'pi pi-times'"></i>
+            {{ t("errors.VALIDATION_PASSWORD_TOO_SHORT") }}
+          </span>
+          <span class="validation-message" :class="flow.registerPasswordsMatch.value ? 'text-success' : 'text-danger'">
+            <i :class="flow.registerPasswordsMatch.value ? 'pi pi-check' : 'pi pi-times'"></i>
+            {{ t("auth.passwordsMatchRequirement") }}
+          </span>
+        </div>
         <div class="auth-actions split">
           <button class="link-button" type="button" @click="flow.showIdentifierStep">
             {{ t("auth.backToSignIn") }}
@@ -159,15 +193,43 @@ const steps = [
               authStore.isLoading ||
               flow.isCheckingUsername.value ||
               flow.isUsernameTaken.value ||
-              !flow.registerForm.value.username ||
-              !flow.registerForm.value.password ||
-              !flow.registerForm.value.confirmPassword ||
-              flow.registerPasswordMismatch.value
+              !flow.canRegister.value
             "
           >
             {{ t("auth.sendCode") }}
           </button>
         </div>
+      </form>
+
+      <form v-else-if="flow.mode.value === 'verify'" class="account-form" @submit.prevent="flow.confirmPublicVerification">
+        <div class="account-chip">
+          <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
+          <i v-else class="pi pi-envelope"></i>
+          <span>{{ flow.accountLookup.value?.email || flow.loginIdentifier.value }}</span>
+        </div>
+        <label class="field">
+          <span>{{ t("auth.verificationCode") }}</span>
+          <input
+            v-model="flow.publicVerificationCode.value"
+            class="input xl code-input"
+            inputmode="numeric"
+            pattern="[0-9]{6}"
+            autocomplete="one-time-code"
+            required
+          />
+          <span
+            v-if="flow.publicVerificationCode.value && !/^\d{6}$/.test(flow.publicVerificationCode.value)"
+            class="validation-message text-danger"
+          >
+            {{ t("errors.VALIDATION_INVALID_CODE") }}
+          </span>
+          <span v-else-if="flow.fieldErrors.value.code" class="validation-message text-danger">
+            {{ flow.fieldErrors.value.code }}
+          </span>
+        </label>
+        <button class="btn btn-primary full" type="submit" :disabled="authStore.isLoading || !/^\d{6}$/.test(flow.publicVerificationCode.value)">
+          {{ t("auth.confirmEmail") }}
+        </button>
       </form>
 
       <form v-else-if="flow.mode.value === 'confirm'" class="account-form" @submit.prevent="flow.confirmRegistration">

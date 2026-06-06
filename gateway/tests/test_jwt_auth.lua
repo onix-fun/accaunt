@@ -21,6 +21,7 @@ package.preload["rs256_token"] = function()
 end
 
 local last_exit = nil
+local last_message = nil
 ngx = {
     HTTP_FORBIDDEN = 403,
     HTTP_UNAUTHORIZED = 401,
@@ -30,7 +31,7 @@ ngx = {
     req = {
         get_method = function() return "GET" end
     },
-    say = function() end,
+    say = function(message) last_message = message end,
     exit = function(status) last_exit = status end,
     time = function() return 100 end
 }
@@ -42,6 +43,7 @@ local function reset()
     ngx.status = 200
     ngx.header = {}
     ngx.var = {}
+    last_message = nil
 end
 
 reset()
@@ -64,6 +66,8 @@ for _, token in ipairs({ "invalid", "bad-issuer", "bad-audience", "expired" }) d
     ngx.var.http_authorization = "Bearer " .. token
     dofile(jwt_auth_path)
     assert(last_exit == 401)
+    assert(last_message:match('"code":"SECURITY_TOKEN_INVALID"'))
+    assert(last_message:match('"numericCode":5102'))
 end
 
 reset()

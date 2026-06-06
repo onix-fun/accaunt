@@ -20,10 +20,11 @@ local function cookie_value(name)
     return nil
 end
 
-local function forbidden(message)
+local function forbidden(code, numeric_code, message)
     ngx.status = ngx.HTTP_FORBIDDEN
     ngx.header["Content-Type"] = "application/json"
-    ngx.say('{"error":"forbidden","message":"' .. message .. '"}')
+    ngx.say('{"code":"' .. code .. '","numericCode":' .. numeric_code .. ',"message":"' .. message ..
+        '","fieldErrors":[],"requestId":"' .. (ngx.var.correlation_id or ngx.var.request_id or "") .. '"}')
     ngx.exit(ngx.HTTP_FORBIDDEN)
     return false
 end
@@ -71,7 +72,7 @@ end
 
 function _M.reject_query_token()
     if ngx.var.arg_access_token and ngx.var.arg_access_token ~= "" then
-        return forbidden("Query access tokens are not supported")
+        return forbidden("SECURITY_TOKEN_INVALID", 5102, "Query access tokens are not supported")
     end
     return true
 end
@@ -97,13 +98,13 @@ function _M.enforce_csrf()
     end
 
     if not _M.is_allowed_origin(ngx.var.http_origin) then
-        return forbidden("Trusted Origin header is required")
+        return forbidden("SECURITY_ORIGIN_INVALID", 5101, "Trusted Origin header is required")
     end
 
     local header_token = ngx.var.http_x_csrf_token
     local cookie_token = cookie_value("csrf_token")
     if not constant_time_equals(header_token, cookie_token) then
-        return forbidden("Valid CSRF token is required")
+        return forbidden("SECURITY_CSRF_INVALID", 5100, "Valid CSRF token is required")
     end
 
     return true

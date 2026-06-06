@@ -1,11 +1,13 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { AuthService } from "@/api/services/AuthService";
+import { AuthService, type AccountLookupResponse } from "@/api/services/AuthService";
+import { apiErrorMessage, parseApiError } from "@/api/client";
 import { trustedRedirectUrl } from "@/infra/navigation/trustedRedirect";
 import { useAuthStore } from "@/infra/store";
+import { isEmail, isPassword, isUsername, isVerificationCode } from "@/shared/lib/validation";
 
-export type AuthMode = "identifier" | "password" | "register" | "confirm" | "name" | "forgot" | "reset";
+export type AuthMode = "identifier" | "password" | "register" | "confirm" | "verify" | "name" | "forgot" | "reset";
 
 export function useAuthFlow() {
   const route = useRoute();
@@ -15,6 +17,7 @@ export function useAuthFlow() {
 
   const mode = ref<AuthMode>(authStore.isCompletingRegistrationProfile ? "name" : "identifier");
   const authMessage = ref("");
+  const fieldErrors = ref<Record<string, string>>({});
   const loginIdentifier = ref("");
   const loginPassword = ref("");
   const registerForm = ref({
@@ -29,6 +32,9 @@ export function useAuthFlow() {
   });
   const pendingRegistrationEmail = ref("");
   const registrationCode = ref("");
+  const publicVerificationCode = ref("");
+  const accountLookup = ref<AccountLookupResponse | null>(null);
+  const isLookupLoading = ref(false);
   const forgotIdentifier = ref("");
   const resetIdentifier = ref("");
   const resetCode = ref("");
@@ -40,7 +46,7 @@ export function useAuthFlow() {
 
   const activeStep = computed(() => {
     if (mode.value === "password" || mode.value === "forgot" || mode.value === "reset") return "password";
-    if (mode.value === "confirm") return "code";
+    if (mode.value === "confirm" || mode.value === "verify") return "code";
     if (mode.value === "name") return "done";
     return "account";
   });
@@ -52,10 +58,27 @@ export function useAuthFlow() {
   const registerPasswordMismatch = computed(() => {
     return Boolean(registerForm.value.confirmPassword) && registerForm.value.password !== registerForm.value.confirmPassword;
   });
+  const registerPasswordValid = computed(() => isPassword(registerForm.value.password));
+  const registerPasswordsMatch = computed(() => Boolean(registerForm.value.confirmPassword) && !registerPasswordMismatch.value);
+  const identifierError = computed(() => {
+    const value = loginIdentifier.value.trim();
+    if (!value) return t("errors.VALIDATION_REQUIRED_FIELD");
+    if (value.includes("@") && !isEmail(value)) return t("errors.VALIDATION_INVALID_EMAIL");
+    if (!value.includes("@") && !isUsername(value)) return t("errors.VALIDATION_USERNAME_TOO_SHORT");
+    return "";
+  });
+  const registrationErrors = computed(() => ({
+    username: isUsername(registerForm.value.username) ? "" : t("errors.VALIDATION_USERNAME_TOO_SHORT"),
+    email: isEmail(registerForm.value.email) ? "" : t("errors.VALIDATION_INVALID_EMAIL"),
+    password: registerPasswordValid.value ? "" : t("errors.VALIDATION_PASSWORD_TOO_SHORT"),
+    confirmPassword: registerPasswordsMatch.value ? "" : t("auth.passwordMismatch"),
+  }));
+  const canRegister = computed(() => Object.values(registrationErrors.value).every((value) => !value));
 
   const title = computed(() => {
     if (mode.value === "register") return t("auth.registerTitle");
     if (mode.value === "confirm") return t("auth.confirmTitle");
+    if (mode.value === "verify") return t("auth.confirmTitle");
     if (mode.value === "name") return t("auth.nameTitle");
     if (mode.value === "forgot") return t("auth.forgotTitle");
     if (mode.value === "reset") return t("auth.resetTitle");
@@ -101,31 +124,60 @@ export function useAuthFlow() {
 
   const showIdentifierStep = () => {
     authMessage.value = "";
+    fieldErrors.value = {};
+    accountLookup.value = null;
     mode.value = "identifier";
   };
 
-  const continueToPassword = () => {
+  const continueToPassword = async () => {
     authMessage.value = "";
-    if (!loginIdentifier.value.trim()) return;
-    mode.value = "password";
+    fieldErrors.value = {};
+    if (identifierError.value) return;
+    isLookupLoading.value = true;
+    try {
+      accountLookup.value = await AuthService.lookupAccount(loginIdentifier.value);
+      const lookup = accountLookup.value;
+      if (lookup.state === "ACTIVE") {
+        mode.value = "password";
+      } else if (lookup.state === "NOT_FOUND") {
+        registerForm.value.email = loginIdentifier.value.includes("@") ? loginIdentifier.value.trim() : "";
+        registerForm.value.username = loginIdentifier.value.includes("@") ? "" : loginIdentifier.value.trim();
+        mode.value = "register";
+      } else if (lookup.state === "PENDING_REGISTRATION") {
+        pendingRegistrationEmail.value = lookup.email || loginIdentifier.value;
+        await AuthService.resendRegistrationCode(loginIdentifier.value);
+        mode.value = "confirm";
+        authMessage.value = t("auth.verificationResent");
+      } else if (lookup.state === "EMAIL_UNVERIFIED") {
+        await AuthService.requestPublicVerification(loginIdentifier.value);
+        publicVerificationCode.value = "";
+        mode.value = "verify";
+        authMessage.value = t("auth.verificationSent");
+      } else {
+        authMessage.value = t("errors.AUTH_ACCOUNT_BLOCKED");
+      }
+    } catch (cause) {
+      captureError(cause);
+    } finally {
+      isLookupLoading.value = false;
+    }
   };
 
   const login = async () => {
     authMessage.value = "";
+    fieldErrors.value = {};
     try {
       await authStore.login(loginIdentifier.value, loginPassword.value);
       await handleAuthSuccess();
-    } catch {
-      authMessage.value = authStore.error || t("auth.loginFailed");
+    } catch (cause) {
+      captureError(cause);
     }
   };
 
   const register = async () => {
     authMessage.value = "";
-    if (registerForm.value.password !== registerForm.value.confirmPassword) {
-      authMessage.value = t("auth.passwordMismatch");
-      return;
-    }
+    fieldErrors.value = {};
+    if (!canRegister.value) return;
     try {
       const response = await authStore.register({
         email: registerForm.value.email,
@@ -136,20 +188,35 @@ export function useAuthFlow() {
       registrationCode.value = "";
       mode.value = "confirm";
       authMessage.value = t("auth.verificationSent");
-    } catch {
-      authMessage.value = authStore.error || t("auth.registrationFailed");
+    } catch (cause) {
+      captureError(cause);
+    }
+  };
+
+  const confirmPublicVerification = async () => {
+    authMessage.value = "";
+    fieldErrors.value = {};
+    if (!isVerificationCode(publicVerificationCode.value)) return;
+    try {
+      await AuthService.confirmPublicVerification(loginIdentifier.value, publicVerificationCode.value);
+      accountLookup.value = await AuthService.lookupAccount(loginIdentifier.value);
+      mode.value = "password";
+      authMessage.value = t("auth.emailConfirmed");
+    } catch (cause) {
+      captureError(cause);
     }
   };
 
   const confirmRegistration = async () => {
     authMessage.value = "";
+    fieldErrors.value = {};
     try {
       await authStore.confirmRegistration(pendingRegistrationEmail.value, registrationCode.value);
       nameForm.value = { firstName: "", lastName: "" };
       mode.value = "name";
       authMessage.value = t("auth.emailConfirmed");
-    } catch {
-      authMessage.value = authStore.error || t("auth.confirmationFailed");
+    } catch (cause) {
+      captureError(cause);
     }
   };
 
@@ -201,15 +268,28 @@ export function useAuthFlow() {
     }
   };
 
+  const captureError = (cause: unknown) => {
+    const parsed = parseApiError(cause);
+    fieldErrors.value = Object.fromEntries(
+      parsed.fieldErrors.map((error) => [error.field, t(`errors.${error.code}`)]),
+    );
+    if (!parsed.fieldErrors.length) authMessage.value = apiErrorMessage(cause);
+  };
+
   return {
     activeStep,
+    accountLookup,
     authMessage,
+    canRegister,
     completeNameStep,
     confirmRegistration,
+    confirmPublicVerification,
     continueToPassword,
     forgotIdentifier,
     forgotPassword,
+    fieldErrors,
     isCheckingUsername,
+    isLookupLoading,
     isUsernameTaken,
     login,
     loginIdentifier,
@@ -217,9 +297,13 @@ export function useAuthFlow() {
     mode,
     nameForm,
     pendingRegistrationEmail,
+    publicVerificationCode,
     register,
     registerForm,
     registerPasswordMismatch,
+    registerPasswordsMatch,
+    registerPasswordValid,
+    registrationErrors,
     registrationCode,
     resendRegistrationCode,
     resetCode,
@@ -229,6 +313,7 @@ export function useAuthFlow() {
     showRegistrationSteps,
     submitResetPassword,
     title,
+    identifierError,
     usernameCheckTouched,
   };
 }

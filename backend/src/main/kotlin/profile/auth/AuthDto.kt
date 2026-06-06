@@ -52,6 +52,26 @@ data class UsernameAvailabilityResponse(
 )
 
 @Serializable
+data class AccountLookupResponse(
+    val state: String,
+    val identifier: String,
+    val email: String? = null,
+    val username: String? = null,
+    val avatarUrl: String? = null
+)
+
+@Serializable
+data class PublicVerificationRequest(
+    val identifier: String
+)
+
+@Serializable
+data class PublicVerificationConfirmRequest(
+    val identifier: String,
+    val code: String
+)
+
+@Serializable
 data class TokenRefreshRequest(
     val refreshToken: String
 )
@@ -73,14 +93,16 @@ data class RegistrationStartedResponse(
 
 @Serializable
 data class ConfirmRegistrationRequest(
-    val email: String,
+    val email: String? = null,
     val code: String,
-    val deviceId: String? = null
+    val deviceId: String? = null,
+    val identifier: String? = null
 )
 
 @Serializable
 data class ResendRegistrationCodeRequest(
-    val email: String
+    val email: String? = null,
+    val identifier: String? = null
 )
 
 @Serializable

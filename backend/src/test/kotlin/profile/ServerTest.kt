@@ -17,6 +17,7 @@ import profile.auth.LoginRequest
 import profile.auth.RegisterRequest
 import profile.auth.ResetPasswordRequest
 import profile.infrastructure.db.VerificationTokenRepository
+import profile.infrastructure.db.UserRepository
 import profile.infrastructure.redis.PendingRegistrationStore
 import profile.infrastructure.security.TokenHasher
 import java.nio.file.Files
@@ -71,9 +72,13 @@ class ServerTest {
     fun `test pending registration confirmation flow`() = testApplication {
         setupTestConfig(cookieDomain = "example.com", cookieSecure = true)
         lateinit var pendingRegistrationStore: PendingRegistrationStore
+        lateinit var verificationTokenRepository: VerificationTokenRepository
+        lateinit var userRepository: UserRepository
         application {
             module()
             pendingRegistrationStore = get()
+            verificationTokenRepository = get()
+            userRepository = get()
         }
         val registerResponse = client.post("/api/auth/register") {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
@@ -92,7 +97,20 @@ class ServerTest {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
             setBody(Json.encodeToString(LoginRequest(identifier = "test@example.com", password = "password123")))
         }
-        assertEquals(HttpStatusCode.BadRequest, loginBeforeConfirmation.status)
+        assertEquals(HttpStatusCode.Unauthorized, loginBeforeConfirmation.status)
+        val loginError = Json.parseToJsonElement(loginBeforeConfirmation.bodyAsText()).jsonObject
+        assertEquals("\"AUTH_INVALID_CREDENTIALS\"", loginError["code"].toString())
+        assertNotNull(loginError["numericCode"])
+        assertNotNull(loginError["fieldErrors"])
+        assertNotNull(loginError["requestId"])
+
+        val pendingLookup = client.get("/api/auth/account-lookup?identifier=testuser")
+        assertEquals(HttpStatusCode.OK, pendingLookup.status)
+        assertTrue(pendingLookup.bodyAsText().contains("\"state\":\"PENDING_REGISTRATION\""))
+
+        val missingLookup = client.get("/api/auth/account-lookup?identifier=missing-user")
+        assertEquals(HttpStatusCode.OK, missingLookup.status)
+        assertTrue(missingLookup.bodyAsText().contains("\"state\":\"NOT_FOUND\""))
 
         val code = codeForPendingRegistration(pendingRegistrationStore, "test@example.com")
         val confirmResponse = client.post("/api/auth/confirm-registration") {
@@ -113,11 +131,31 @@ class ServerTest {
         assertNotNull(cookieWithPrefix(confirmResponse, "access_token="), "Confirmation should set access token cookie")
         assertNotNull(cookieWithPrefix(confirmResponse, "active_user="), "Confirmation should set active account cookie")
 
+        val activeLookup = client.get("/api/auth/account-lookup?identifier=test@example.com")
+        assertEquals(HttpStatusCode.OK, activeLookup.status)
+        assertTrue(activeLookup.bodyAsText().contains("\"state\":\"ACTIVE\""))
+
+        userRepository.updateEmailVerified(userId, false)
+        val unverifiedLookup = client.get("/api/auth/account-lookup?identifier=testuser")
+        assertTrue(unverifiedLookup.bodyAsText().contains("\"state\":\"EMAIL_UNVERIFIED\""))
+        val requestVerification = client.post("/api/auth/public-verification/request") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"identifier":"testuser"}""")
+        }
+        assertEquals(HttpStatusCode.OK, requestVerification.status)
+        val verificationCode = codeForVerificationToken(verificationTokenRepository, "EMAIL_VERIFICATION")
+        val confirmVerification = client.post("/api/auth/public-verification/confirm") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"identifier":"testuser","code":"$verificationCode"}""")
+        }
+        assertEquals(HttpStatusCode.OK, confirmVerification.status)
+        assertTrue(client.get("/api/auth/account-lookup?identifier=testuser").bodyAsText().contains("\"state\":\"ACTIVE\""))
+
         val reusedCodeResponse = client.post("/api/auth/confirm-registration") {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
             setBody(Json.encodeToString(ConfirmRegistrationRequest("test@example.com", code)))
         }
-        assertEquals(HttpStatusCode.BadRequest, reusedCodeResponse.status)
+        assertEquals(HttpStatusCode.NotFound, reusedCodeResponse.status)
     }
 
     @Test
@@ -242,7 +280,7 @@ class ServerTest {
             contentType(ContentType.Application.Json)
             setBody("""{"refreshToken":"$apiRefreshToken"}""")
         }
-        assertEquals(HttpStatusCode.BadRequest, reusedApiRefreshResponse.status)
+        assertEquals(HttpStatusCode.Unauthorized, reusedApiRefreshResponse.status)
 
         val csrfResponse = client.get("/api/auth/csrf")
         assertEquals(HttpStatusCode.OK, csrfResponse.status)
@@ -326,7 +364,7 @@ class ServerTest {
                 "refresh_token_$secondId=${cookiePair(firstRefresh).substringAfter("=")}; active_user=$secondId"
             )
         }
-        assertEquals(HttpStatusCode.Unauthorized, mismatchedRefreshResponse.status)
+        assertEquals(HttpStatusCode.NotFound, mismatchedRefreshResponse.status)
 
         val switchResponse = client.post("/api/auth/switch") {
             contentType(ContentType.Application.Json)

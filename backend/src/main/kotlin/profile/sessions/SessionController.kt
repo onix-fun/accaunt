@@ -5,6 +5,8 @@ import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
 import io.ktor.server.response.*
+import profile.shared.ApiErrorCode
+import profile.shared.apiError
 
 class SessionController(private val sessionService: SessionService) {
 
@@ -17,7 +19,7 @@ class SessionController(private val sessionService: SessionService) {
 
     suspend fun revokeSession(call: ApplicationCall) {
         val userId = call.principal<JWTPrincipal>()!!.payload.subject
-        val sessionId = call.parameters["id"] ?: throw IllegalArgumentException("Missing session ID")
+        val sessionId = call.parameters["id"] ?: apiError(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "id")
         
         sessionService.revokeSession(userId, sessionId)
         call.respond(HttpStatusCode.OK, mapOf("message" to "Session revoked"))

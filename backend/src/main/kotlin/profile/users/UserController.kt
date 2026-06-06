@@ -8,6 +8,8 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import profile.infrastructure.db.User
+import profile.shared.ApiErrorCode
+import profile.shared.apiError
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
@@ -17,11 +19,7 @@ class UserController(
     suspend fun getMe(call: ApplicationCall) {
         val userId = call.principal<JWTPrincipal>()!!.payload.subject
 
-        val user = userService.getProfile(userId)
-        if (user == null) {
-            call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
-            return
-        }
+        val user = userService.getProfile(userId) ?: apiError(ApiErrorCode.USER_NOT_FOUND)
 
         call.respond(HttpStatusCode.OK, user.toProfileDto())
     }
@@ -43,10 +41,10 @@ class UserController(
         multipart.forEachPart { part ->
             if (part is PartData.FileItem) {
                 val contentType = part.contentType?.withoutParameters()?.toString()?.lowercase()
-                    ?: throw IllegalArgumentException("Avatar content type is required")
+                    ?: apiError(ApiErrorCode.AVATAR_CONTENT_TYPE_REQUIRED, "file")
 
                 if (contentType !in ALLOWED_AVATAR_TYPES) {
-                    throw IllegalArgumentException("Avatar must be a JPEG, PNG, or WebP image")
+                    apiError(ApiErrorCode.AVATAR_UNSUPPORTED_TYPE, "file")
                 }
 
                 val fileBytes = part.streamProvider().use { it.readLimited(MAX_AVATAR_BYTES) }
@@ -60,25 +58,21 @@ class UserController(
         if (user != null) {
             call.respond(HttpStatusCode.OK, user!!.toProfileDto())
         } else {
-            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "No file uploaded"))
+            apiError(ApiErrorCode.AVATAR_FILE_REQUIRED, "file")
         }
     }
 
     suspend fun getById(call: ApplicationCall) {
-        val id = call.parameters["id"] ?: return call.respond(HttpStatusCode.BadRequest, "Missing ID")
+        val id = call.parameters["id"] ?: apiError(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "id")
         
         try {
             java.util.UUID.fromString(id)
         } catch (e: Exception) {
-            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid UUID format"))
-            return
+            apiError(ApiErrorCode.VALIDATION_INVALID_UUID, "id")
         }
 
         val user = userService.getProfile(id)
-        if (user == null) {
-            call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
-            return
-        }
+        if (user == null) apiError(ApiErrorCode.USER_NOT_FOUND)
 
         call.respond(HttpStatusCode.OK, user.toPublicDto())
     }
@@ -92,7 +86,7 @@ class UserController(
             val read = read(buffer)
             if (read == -1) break
             total += read
-            if (total > maxBytes) throw IllegalArgumentException("Avatar must be 5MB or smaller")
+            if (total > maxBytes) apiError(ApiErrorCode.AVATAR_TOO_LARGE, "file")
             output.write(buffer, 0, read)
         }
 
@@ -112,7 +106,7 @@ class UserController(
                 bytes.copyOfRange(8, 12).contentEquals("WEBP".toByteArray())
             else -> false
         }
-        if (!valid) throw IllegalArgumentException("Avatar file signature does not match its content type")
+        if (!valid) apiError(ApiErrorCode.AVATAR_SIGNATURE_MISMATCH, "file")
     }
 
     private companion object {

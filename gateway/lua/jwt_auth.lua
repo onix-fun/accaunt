@@ -4,7 +4,8 @@ local token_verifier = require "rs256_token"
 local function unauthorized(message)
     ngx.status = ngx.HTTP_UNAUTHORIZED
     ngx.header["Content-Type"] = "application/json"
-    ngx.say('{"error":"unauthorized","message":"' .. (message or "Unauthorized") .. '"}')
+    ngx.say('{"code":"SECURITY_TOKEN_INVALID","numericCode":5102,"message":"' .. (message or "Invalid bearer token") ..
+        '","fieldErrors":[],"requestId":"' .. (ngx.var.correlation_id or ngx.var.request_id or "") .. '"}')
     return ngx.exit(ngx.HTTP_UNAUTHORIZED)
 end
 

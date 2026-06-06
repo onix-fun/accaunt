@@ -32,6 +32,8 @@ import profile.auth.LoginRequest
 import profile.auth.RegisterRequest
 import profile.auth.ResendRegistrationCodeRequest
 import profile.auth.ResetPasswordRequest
+import profile.auth.PublicVerificationConfirmRequest
+import profile.auth.PublicVerificationRequest
 import profile.auth.authRouting
 import profile.grpc.ProfileGrpcServer
 import profile.infrastructure.db.UserRepository
@@ -43,6 +45,10 @@ import profile.search.SearchService
 import profile.search.searchRouting
 import profile.sessions.SessionController
 import profile.sessions.sessionRouting
+import profile.shared.ApiErrorCode
+import profile.shared.ApiErrorResponse
+import profile.shared.ApiException
+import profile.shared.ApiFieldError
 import profile.users.UserController
 import profile.users.userRouting
 
@@ -60,41 +66,41 @@ fun Application.module() {
     install(RequestValidation) {
         validate<RegisterRequest> { request ->
             when {
-                request.email.isBlank() -> ValidationResult.Invalid("Email cannot be blank")
-                !request.email.contains("@") -> ValidationResult.Invalid("Invalid email format")
-                request.username.isBlank() -> ValidationResult.Invalid("Username cannot be blank")
-                request.username.length < 3 -> ValidationResult.Invalid("Username must be at least 3 characters")
-                request.password.length < 8 -> ValidationResult.Invalid("Password must be at least 8 characters")
+                request.email.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "email")
+                !request.email.contains("@") -> invalid(ApiErrorCode.VALIDATION_INVALID_EMAIL, "email")
+                request.username.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "username")
+                request.username.length < 3 -> invalid(ApiErrorCode.VALIDATION_USERNAME_TOO_SHORT, "username")
+                request.password.length < 8 -> invalid(ApiErrorCode.VALIDATION_PASSWORD_TOO_SHORT, "password")
                 else -> ValidationResult.Valid
             }
         }
         validate<ConfirmRegistrationRequest> { request ->
+            val identifier = request.identifier ?: request.email.orEmpty()
             when {
-                request.email.isBlank() -> ValidationResult.Invalid("Email cannot be blank")
-                !request.email.contains("@") -> ValidationResult.Invalid("Invalid email format")
-                !request.code.matches(Regex("\\d{6}")) -> ValidationResult.Invalid("Verification code must be 6 digits")
+                identifier.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
+                !request.code.matches(Regex("\\d{6}")) -> invalid(ApiErrorCode.VALIDATION_INVALID_CODE, "code")
                 else -> ValidationResult.Valid
             }
         }
         validate<ResendRegistrationCodeRequest> { request ->
+            val identifier = request.identifier ?: request.email.orEmpty()
             when {
-                request.email.isBlank() -> ValidationResult.Invalid("Email cannot be blank")
-                !request.email.contains("@") -> ValidationResult.Invalid("Invalid email format")
+                identifier.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
                 else -> ValidationResult.Valid
             }
         }
         validate<LoginRequest> { request ->
             val identifier = request.identifier ?: request.email.orEmpty()
             when {
-                identifier.isBlank() -> ValidationResult.Invalid("Email or username cannot be blank")
-                request.password.isBlank() -> ValidationResult.Invalid("Password cannot be blank")
+                identifier.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
+                request.password.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "password")
                 else -> ValidationResult.Valid
             }
         }
         validate<ForgotPasswordRequest> { request ->
             val identifier = request.identifier ?: request.email.orEmpty()
             when {
-                identifier.isBlank() -> ValidationResult.Invalid("Email or username cannot be blank")
+                identifier.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
                 else -> ValidationResult.Valid
             }
         }
@@ -102,22 +108,33 @@ fun Application.module() {
             val identifier = request.identifier ?: request.email.orEmpty()
             val code = request.code ?: request.token.orEmpty()
             when {
-                identifier.isBlank() -> ValidationResult.Invalid("Email or username cannot be blank")
-                !code.matches(Regex("\\d{6}")) -> ValidationResult.Invalid("Reset code must be 6 digits")
-                request.newPassword.length < 8 -> ValidationResult.Invalid("Password must be at least 8 characters")
+                identifier.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
+                !code.matches(Regex("\\d{6}")) -> invalid(ApiErrorCode.VALIDATION_INVALID_CODE, "code")
+                request.newPassword.length < 8 -> invalid(ApiErrorCode.VALIDATION_PASSWORD_TOO_SHORT, "newPassword")
                 else -> ValidationResult.Valid
             }
         }
         validate<ChangePasswordRequest> { request ->
             when {
-                request.currentPassword.isBlank() -> ValidationResult.Invalid("Current password cannot be blank")
-                request.newPassword.length < 8 -> ValidationResult.Invalid("Password must be at least 8 characters")
+                request.currentPassword.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "currentPassword")
+                request.newPassword.length < 8 -> invalid(ApiErrorCode.VALIDATION_PASSWORD_TOO_SHORT, "newPassword")
                 else -> ValidationResult.Valid
             }
         }
         validate<DeleteAccountRequest> { request ->
             when {
-                request.password.isBlank() -> ValidationResult.Invalid("Password cannot be blank")
+                request.password.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "password")
+                else -> ValidationResult.Valid
+            }
+        }
+        validate<PublicVerificationRequest> { request ->
+            if (request.identifier.isBlank()) invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
+            else ValidationResult.Valid
+        }
+        validate<PublicVerificationConfirmRequest> { request ->
+            when {
+                request.identifier.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
+                !request.code.matches(Regex("\\d{6}")) -> invalid(ApiErrorCode.VALIDATION_INVALID_CODE, "code")
                 else -> ValidationResult.Valid
             }
         }
@@ -125,18 +142,22 @@ fun Application.module() {
 
     install(StatusPages) {
         exception<RequestValidationException> { call, cause ->
-            call.respond(HttpStatusCode.BadRequest, mapOf("error" to cause.reasons.joinToString()))
+            val parts = cause.reasons.firstOrNull()?.split("|", limit = 2).orEmpty()
+            val error = parts.firstOrNull()?.let { runCatching { ApiErrorCode.valueOf(it) }.getOrNull() }
+                ?: ApiErrorCode.VALIDATION_INVALID_REQUEST
+            val fields = parts.getOrNull(1)?.split(",")?.filter { it.isNotBlank() }.orEmpty()
+            call.respondApiError(error, fields)
         }
-        exception<IllegalArgumentException> { call, cause ->
-            call.respond(HttpStatusCode.BadRequest, mapOf("error" to cause.message))
+        exception<ApiException> { call, cause ->
+            call.respondApiError(cause.error, cause.fields)
         }
         exception<IllegalStateException> { call, cause ->
             call.application.log.error("Illegal state: ${cause.message}", cause)
-            call.respond(HttpStatusCode.InternalServerError, mapOf("error" to cause.message))
+            call.respondApiError(ApiErrorCode.INFRASTRUCTURE_SERVICE_UNAVAILABLE)
         }
         exception<Throwable> { call, cause ->
             call.application.log.error("Internal server error: ${cause.message}", cause)
-            call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Internal server error"))
+            call.respondApiError(ApiErrorCode.INFRASTRUCTURE_INTERNAL_ERROR)
         }
     }
 
@@ -256,4 +277,22 @@ fun Application.module() {
         searchRouting(searchController)
         sessionRouting(sessionController)
     }
+}
+
+private fun invalid(error: ApiErrorCode, vararg fields: String): ValidationResult.Invalid {
+    return ValidationResult.Invalid("${error.name}|${fields.joinToString(",")}")
+}
+
+private suspend fun ApplicationCall.respondApiError(error: ApiErrorCode, fields: List<String> = emptyList()) {
+    val requestId = request.headers["X-Correlation-Id"] ?: java.util.UUID.randomUUID().toString()
+    respond(
+        error.status,
+        ApiErrorResponse(
+            code = error.name,
+            numericCode = error.numericCode,
+            message = error.message,
+            fieldErrors = fields.map { ApiFieldError(it, error.name, error.numericCode) },
+            requestId = requestId
+        )
+    )
 }

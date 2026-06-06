@@ -4,6 +4,8 @@ import profile.auth.AuthService
 import profile.infrastructure.db.User
 import profile.infrastructure.db.UserRepository
 import profile.infrastructure.storage.S3Client
+import profile.shared.ApiErrorCode
+import profile.shared.apiError
 
 class UserService(
     private val userRepository: UserRepository,
@@ -15,14 +17,14 @@ class UserService(
     }
 
     fun updateProfile(userId: String, request: UpdateProfileRequest): User {
-        val user = userRepository.findById(userId) ?: throw IllegalArgumentException("User not found")
+        val user = userRepository.findById(userId) ?: apiError(ApiErrorCode.USER_NOT_FOUND)
         
         val newEmail = request.email ?: user.email
         var emailChanged = false
 
         if (newEmail != user.email) {
             val existing = userRepository.findByEmail(newEmail)
-            if (existing != null) throw IllegalArgumentException("Email already in use")
+            if (existing != null) apiError(ApiErrorCode.AUTH_EMAIL_IN_USE, "email")
             emailChanged = true
         }
 
@@ -43,7 +45,7 @@ class UserService(
     }
 
     suspend fun updateAvatar(userId: String, bytes: ByteArray, contentType: String): User {
-        userRepository.findById(userId) ?: throw IllegalArgumentException("User not found")
+        userRepository.findById(userId) ?: apiError(ApiErrorCode.USER_NOT_FOUND)
         val avatarUrl = s3Client.uploadAvatar(userId, bytes, contentType)
         
         userRepository.updateAvatar(userId, avatarUrl)

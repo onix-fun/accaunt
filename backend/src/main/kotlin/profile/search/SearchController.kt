@@ -4,6 +4,8 @@ import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.response.*
 import profile.users.UserPublicDto
+import profile.shared.ApiErrorCode
+import profile.shared.apiError
 
 class SearchController(private val searchService: SearchService) {
 
@@ -15,8 +17,7 @@ class SearchController(private val searchService: SearchService) {
         }
 
         if (query.length < 2) {
-            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Query must be at least 2 characters long"))
-            return
+            apiError(ApiErrorCode.VALIDATION_SEARCH_QUERY_TOO_SHORT, "q")
         }
 
         val results = searchService.searchByUsernamePrefix(query)

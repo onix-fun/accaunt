@@ -18,6 +18,8 @@ import profile.infrastructure.redis.PendingRegistrationStore
 import profile.infrastructure.security.PasswordHasher
 import profile.infrastructure.security.TokenHasher
 import profile.search.SearchService
+import profile.shared.ApiErrorCode
+import profile.shared.apiError
 import java.security.SecureRandom
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -69,21 +71,23 @@ class AuthService(
     }
 
     fun confirmRegistration(
-        email: String,
+        identifier: String,
         code: String,
         deviceId: String?,
         userAgent: String?,
         ipAddress: String?
     ): LoginResult {
-        val normalizedEmail = normalizeEmail(email)
+        val pendingForIdentifier = pendingRegistrationStore.findByIdentifier(identifier)
+            ?: apiError(ApiErrorCode.AUTH_PENDING_REGISTRATION_NOT_FOUND, "identifier")
+        val normalizedEmail = pendingForIdentifier.email
         val codeHash = TokenHasher.hash(code.trim())
         val emailForCode = pendingRegistrationStore.findEmailByCodeHash(codeHash)
-            ?: throw IllegalArgumentException("Invalid or expired registration code")
+            ?: apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
 
-        if (emailForCode != normalizedEmail) throw IllegalArgumentException("Invalid registration code")
+        if (emailForCode != normalizedEmail) apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
 
         val pending = pendingRegistrationStore.findByEmail(normalizedEmail)
-            ?: throw IllegalArgumentException("Pending registration not found")
+            ?: apiError(ApiErrorCode.AUTH_PENDING_REGISTRATION_NOT_FOUND, "identifier")
 
         ensureUserCanBeCreated(pending.email, pending.username)
 
@@ -105,10 +109,10 @@ class AuthService(
         return createSession(user, deviceId, userAgent, ipAddress)
     }
 
-    fun resendRegistrationCode(email: String): RegistrationStartedResponse {
-        val normalizedEmail = normalizeEmail(email)
-        val pending = pendingRegistrationStore.findByEmail(normalizedEmail)
-            ?: throw IllegalArgumentException("Pending registration not found")
+    fun resendRegistrationCode(identifier: String): RegistrationStartedResponse {
+        val pending = pendingRegistrationStore.findByIdentifier(identifier)
+            ?: apiError(ApiErrorCode.AUTH_PENDING_REGISTRATION_NOT_FOUND, "identifier")
+        val normalizedEmail = pending.email
 
         val code = generateVerificationCode()
         pendingRegistrationStore.refreshCode(normalizedEmail, TokenHasher.hash(code))
@@ -140,11 +144,11 @@ class AuthService(
     fun verifyEmail(userId: String, code: String) {
         val hash = TokenHasher.hash(code.trim())
         val token = verificationTokenRepository.findByHash(hash)
-            ?: throw IllegalArgumentException("Invalid or expired code")
+            ?: apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
 
-        if (token.userId != userId) throw IllegalArgumentException("Invalid code")
-        if (token.purpose != "EMAIL_VERIFICATION") throw IllegalArgumentException("Invalid code")
-        if (token.expiresAt.isBefore(Instant.now())) throw IllegalArgumentException("Code expired")
+        if (token.userId != userId) apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
+        if (token.purpose != "EMAIL_VERIFICATION") apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
+        if (token.expiresAt.isBefore(Instant.now())) apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
 
         userRepository.updateEmailVerified(userId, true)
         verificationTokenRepository.markAsUsed(token.id)
@@ -172,13 +176,13 @@ class AuthService(
     fun resetPassword(identifier: String, resetCode: String, newPassword: String) {
         val hash = TokenHasher.hash(resetCode.trim())
         val token = verificationTokenRepository.findByHash(hash)
-            ?: throw IllegalArgumentException("Invalid or expired code")
+            ?: apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
 
-        if (token.purpose != "PASSWORD_RESET") throw IllegalArgumentException("Invalid code")
-        if (token.expiresAt.isBefore(Instant.now())) throw IllegalArgumentException("Code expired")
+        if (token.purpose != "PASSWORD_RESET") apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
+        if (token.expiresAt.isBefore(Instant.now())) apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
 
-        val user = findUserByIdentifier(identifier) ?: throw IllegalArgumentException("Invalid account")
-        if (user.id != token.userId) throw IllegalArgumentException("Invalid code")
+        val user = findUserByIdentifier(identifier) ?: apiError(ApiErrorCode.AUTH_ACCOUNT_NOT_FOUND, "identifier")
+        if (user.id != token.userId) apiError(ApiErrorCode.AUTH_INVALID_OR_EXPIRED_CODE, "code")
 
         val newPasswordHash = PasswordHasher.hash(newPassword)
         userRepository.updatePassword(token.userId, newPasswordHash)
@@ -187,9 +191,9 @@ class AuthService(
     }
 
     fun changePassword(userId: String, currentPassword: String, newPassword: String) {
-        val user = userRepository.findById(userId) ?: throw IllegalArgumentException("User not found")
+        val user = userRepository.findById(userId) ?: apiError(ApiErrorCode.USER_NOT_FOUND)
         if (!PasswordHasher.verify(user.passwordHash, currentPassword)) {
-            throw IllegalArgumentException("Current password is invalid")
+            apiError(ApiErrorCode.AUTH_INVALID_PASSWORD, "currentPassword")
         }
 
         userRepository.updatePassword(userId, PasswordHasher.hash(newPassword))
@@ -197,9 +201,9 @@ class AuthService(
     }
 
     fun deleteAccount(userId: String, password: String) {
-        val user = userRepository.findById(userId) ?: throw IllegalArgumentException("User not found")
+        val user = userRepository.findById(userId) ?: apiError(ApiErrorCode.USER_NOT_FOUND)
         if (!PasswordHasher.verify(user.passwordHash, password)) {
-            throw IllegalArgumentException("Current password is invalid")
+            apiError(ApiErrorCode.AUTH_INVALID_PASSWORD, "password")
         }
 
         userRepository.delete(userId)
@@ -212,8 +216,10 @@ class AuthService(
         userAgent: String?,
         ipAddress: String?
     ): LoginResult {
-        val user = findUserByIdentifier(identifier) ?: throw IllegalArgumentException("Invalid credentials")
-        if (!PasswordHasher.verify(user.passwordHash, password)) throw IllegalArgumentException("Invalid credentials")
+        val user = findUserByIdentifier(identifier) ?: apiError(ApiErrorCode.AUTH_INVALID_CREDENTIALS, "password")
+        if (user.status != "ACTIVE") apiError(ApiErrorCode.AUTH_ACCOUNT_BLOCKED, "identifier")
+        if (!user.emailVerified) apiError(ApiErrorCode.AUTH_EMAIL_NOT_VERIFIED, "identifier")
+        if (!PasswordHasher.verify(user.passwordHash, password)) apiError(ApiErrorCode.AUTH_INVALID_CREDENTIALS, "password")
 
         return createSession(user, deviceId, userAgent, ipAddress)
     }
@@ -245,17 +251,17 @@ class AuthService(
         } else {
             sessionRepository.findByTokenHash(refreshTokenHash)
         }
-            ?: throw IllegalArgumentException("Invalid refresh token")
+            ?: apiError(ApiErrorCode.AUTH_INVALID_REFRESH_TOKEN)
 
         validateSession(session)
 
-        val user = userRepository.findById(session.userId) ?: throw IllegalArgumentException("User not found")
+        val user = userRepository.findById(session.userId) ?: apiError(ApiErrorCode.USER_NOT_FOUND)
         val newRefreshToken = generateRefreshToken()
         val newRefreshTokenHash = TokenHasher.hash(newRefreshToken)
         val newExpiresAt = Instant.now().plus(sessionConfig.refreshTokenExpDays, ChronoUnit.DAYS)
 
         if (!sessionRepository.rotateToken(session.id, refreshTokenHash, newRefreshTokenHash, newExpiresAt, allowPreviousToken)) {
-            throw IllegalArgumentException("Invalid refresh token")
+            apiError(ApiErrorCode.AUTH_INVALID_REFRESH_TOKEN)
         }
 
         val accessToken = jwtIssuer.createToken(user.id, session.id, user.role)
@@ -292,13 +298,41 @@ class AuthService(
     }
 
     private fun validateSession(session: Session) {
-        if (session.revokedAt != null) throw IllegalArgumentException("Session revoked")
-        if (!session.expiresAt.isAfter(Instant.now())) throw IllegalArgumentException("Session expired")
+        if (session.revokedAt != null) apiError(ApiErrorCode.AUTH_SESSION_REVOKED)
+        if (!session.expiresAt.isAfter(Instant.now())) apiError(ApiErrorCode.AUTH_SESSION_EXPIRED)
     }
 
     private fun ensureUserCanBeCreated(email: String, username: String) {
-        if (userRepository.findByEmail(email) != null) throw IllegalArgumentException("Email already in use")
-        if (userRepository.findByUsername(username) != null) throw IllegalArgumentException("Username already in use")
+        if (userRepository.findByEmail(email) != null) apiError(ApiErrorCode.AUTH_EMAIL_IN_USE, "email")
+        if (userRepository.findByUsername(username) != null) apiError(ApiErrorCode.AUTH_USERNAME_IN_USE, "username")
+    }
+
+    fun lookupAccount(identifier: String): AccountLookupResponse {
+        val normalized = identifier.trim()
+        if (normalized.isBlank()) apiError(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
+        val pending = pendingRegistrationStore.findByIdentifier(normalized)
+        if (pending != null) {
+            return AccountLookupResponse("PENDING_REGISTRATION", normalized, pending.email, pending.username)
+        }
+        val user = findUserByIdentifier(normalized)
+            ?: return AccountLookupResponse("NOT_FOUND", normalized)
+        val state = when {
+            user.status != "ACTIVE" -> "BLOCKED"
+            !user.emailVerified -> "EMAIL_UNVERIFIED"
+            else -> "ACTIVE"
+        }
+        return AccountLookupResponse(state, normalized, user.email, user.username, user.avatarUrl)
+    }
+
+    fun requestPublicEmailVerification(identifier: String) {
+        val user = findUserByIdentifier(identifier) ?: apiError(ApiErrorCode.AUTH_ACCOUNT_NOT_FOUND, "identifier")
+        if (user.status != "ACTIVE") apiError(ApiErrorCode.AUTH_ACCOUNT_BLOCKED, "identifier")
+        if (!user.emailVerified) requestEmailVerification(user.id)
+    }
+
+    fun confirmPublicEmailVerification(identifier: String, code: String) {
+        val user = findUserByIdentifier(identifier) ?: apiError(ApiErrorCode.AUTH_ACCOUNT_NOT_FOUND, "identifier")
+        verifyEmail(user.id, code)
     }
 
     private fun findUserByIdentifier(identifier: String): User? {

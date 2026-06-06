@@ -27,6 +27,7 @@ http {
     limit_req_zone $binary_remote_addr zone=username_availability:10m rate=${ACCOUNT_USERNAME_RATE};
     limit_req_zone $binary_remote_addr zone=auth_session:10m rate=${ACCOUNT_SESSION_RATE};
     limit_req_zone $binary_remote_addr zone=avatar_upload:10m rate=${ACCOUNT_AVATAR_RATE};
+    limit_req_status 429;
 
     map $http_x_correlation_id $correlation_id {
         default $http_x_correlation_id;
@@ -41,6 +42,7 @@ http {
 
     server {
         listen 8089;
+        proxy_intercept_errors on;
 
         add_header X-Correlation-Id $correlation_id always;
         add_header X-Content-Type-Options "nosniff" always;
@@ -74,6 +76,19 @@ http {
 
         if ($request_method = OPTIONS) {
             return 204;
+        }
+
+        error_page 429 = @rate_limited;
+        error_page 502 503 504 = @service_unavailable;
+
+        location @rate_limited {
+            default_type application/json;
+            return 429 '{"code":"INFRASTRUCTURE_RATE_LIMITED","numericCode":5002,"message":"Too many requests","fieldErrors":[],"requestId":"$correlation_id"}';
+        }
+
+        location @service_unavailable {
+            default_type application/json;
+            return 503 '{"code":"INFRASTRUCTURE_SERVICE_UNAVAILABLE","numericCode":5001,"message":"Service temporarily unavailable","fieldErrors":[],"requestId":"$correlation_id"}';
         }
 
         location = /health {
@@ -119,8 +134,14 @@ http {
             proxy_pass http://$profile_upstream;
         }
 
-        location = /api/auth/username-available {
+        location ~ ^/api/auth/(username-available|account-lookup)$ {
             limit_req zone=username_availability burst=19 nodelay;
+            access_by_lua_file /usr/local/openresty/nginx/lua/csrf_access.lua;
+            proxy_pass http://$profile_upstream;
+        }
+
+        location ~ ^/api/auth/public-verification/(request|confirm)$ {
+            limit_req zone=auth_confirmation burst=9 nodelay;
             access_by_lua_file /usr/local/openresty/nginx/lua/csrf_access.lua;
             proxy_pass http://$profile_upstream;
         }

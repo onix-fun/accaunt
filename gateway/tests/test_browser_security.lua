@@ -40,6 +40,9 @@ ngx.var.http_x_csrf_token = "wrong"
 assert(not security.enforce_csrf())
 assert(last_exit == 403)
 assert(last_message:match("Valid CSRF token"))
+assert(last_message:match('"code":"SECURITY_CSRF_INVALID"'))
+assert(last_message:match('"numericCode":5100'))
+assert(last_message:match('"requestId":'))
 
 ngx.var.http_authorization = "Bearer test"
 assert(security.enforce_csrf())
@@ -47,5 +50,6 @@ assert(security.enforce_csrf())
 ngx.var.arg_access_token = "query-token"
 assert(not security.reject_query_token())
 assert(last_exit == 403)
+assert(last_message:match('"code":"SECURITY_TOKEN_INVALID"'))
 
 print("account browser_security tests passed")
