@@ -58,8 +58,8 @@ function _M.is_allowed_origin(origin)
     end
 
     local host = authority:gsub(":%d+$", ""):lower()
-    local environment = os.getenv("APP_ENV") or "development"
-    if environment ~= "production" and (host == "localhost" or host == "127.0.0.1") then
+    local environment = os.getenv("APP_ENV") or ""
+    if environment == "development" and (host == "localhost" or host == "127.0.0.1") then
         return scheme == "http" or scheme == "https"
     end
 

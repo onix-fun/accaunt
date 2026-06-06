@@ -7,8 +7,8 @@ ktor:
 
 identity:
   security:
-    otp_hmac_secret: "$IDENTITY_OTP_HMAC_SECRET:development-only-otp-secret"
-    internal_auth_secret: "$IDENTITY_INTERNAL_AUTH_SECRET:development-only-internal-secret"
+    otp_hmac_secret: "$IDENTITY_OTP_HMAC_SECRET:"
+    internal_auth_secret: "$IDENTITY_INTERNAL_AUTH_SECRET:"
   grpc:
     port: "$IDENTITY_GRPC_PORT:9097"
     enabled: "$IDENTITY_GRPC_ENABLED:false"

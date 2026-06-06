@@ -76,8 +76,8 @@ fun koinModule(config: ApplicationConfig) = module {
             bucket = config.property("s3.bucket").getString()
         ),
         security = SecurityConfig(
-            otpHmacSecret = config.propertyOrNull("identity.security.otp_hmac_secret")?.getString() ?: "development-only-otp-secret",
-            internalAuthSecret = config.propertyOrNull("identity.security.internal_auth_secret")?.getString() ?: "development-only-internal-secret"
+            otpHmacSecret = config.propertyOrNull("identity.security.otp_hmac_secret")?.getString() ?: throw IllegalStateException("IDENTITY_OTP_HMAC_SECRET is not configured"),
+            internalAuthSecret = config.propertyOrNull("identity.security.internal_auth_secret")?.getString() ?: throw IllegalStateException("IDENTITY_INTERNAL_AUTH_SECRET is not configured")
         ),
         environment = config.propertyOrNull("app.environment")?.getString() ?: "development"
     )

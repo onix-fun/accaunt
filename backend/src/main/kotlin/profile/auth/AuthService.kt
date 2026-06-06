@@ -212,8 +212,17 @@ class AuthService(
         val user = findUserByIdentifier(identifier) ?: apiError(ApiErrorCode.AUTH_INVALID_CREDENTIALS, "password")
         if (user.status != "ACTIVE") apiError(ApiErrorCode.AUTH_ACCOUNT_BLOCKED, "identifier")
         if (!user.emailVerified) apiError(ApiErrorCode.AUTH_EMAIL_NOT_VERIFIED, "identifier")
-        if (!PasswordHasher.verify(user.passwordHash, password)) apiError(ApiErrorCode.AUTH_INVALID_CREDENTIALS, "password")
 
+        if (redisManager.getAccountFailedAttempts(user.id) >= 10) {
+            apiError(ApiErrorCode.AUTH_ACCOUNT_BLOCKED, "identifier")
+        }
+
+        if (!PasswordHasher.verify(user.passwordHash, password)) {
+            redisManager.incrementAccountFailedAttempts(user.id)
+            apiError(ApiErrorCode.AUTH_INVALID_CREDENTIALS, "password")
+        }
+
+        redisManager.clearAccountFailedAttempts(user.id)
         return createSession(user, deviceId, userAgent, ipAddress)
     }
 

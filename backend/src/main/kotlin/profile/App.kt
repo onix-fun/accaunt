@@ -55,7 +55,12 @@ import profile.users.RequestEmailChangeRequest
 import profile.users.ConfirmEmailChangeRequest
 import profile.infrastructure.db.SessionRepository
 import profile.infrastructure.config.SecurityConfig
+import profile.infrastructure.ratelimit.RateLimit
+import profile.infrastructure.ratelimit.RateLimitConfig
+import profile.infrastructure.redis.RedisManager
 import profile.users.userRouting
+
+private const val MAX_BODY_SIZE = 5L * 1024 * 1024 // 5MB, matches AVATAR_TOO_LARGE
 
 fun Application.module() {
     // 1. Configure Plugins
@@ -69,6 +74,19 @@ fun Application.module() {
             explicitNulls = false
             encodeDefaults = true
         })
+    }
+
+    intercept(ApplicationCallPipeline.Setup) {
+        val contentLength = context.request.headers[io.ktor.http.HttpHeaders.ContentLength]?.toLongOrNull()
+        if (contentLength != null && contentLength > MAX_BODY_SIZE) {
+            context.respond(HttpStatusCode.PayloadTooLarge, ApiErrorResponse(
+                code = ApiErrorCode.AVATAR_TOO_LARGE.name,
+                numericCode = ApiErrorCode.AVATAR_TOO_LARGE.numericCode,
+                message = ApiErrorCode.AVATAR_TOO_LARGE.message,
+                fieldErrors = emptyList()
+            ))
+            return@intercept
+        }
     }
 
     install(RequestValidation) {
@@ -158,6 +176,30 @@ fun Application.module() {
         }
     }
 
+    install(RateLimit) {
+        route("/api/auth/login", max = 20, windowSeconds = 60)
+        route("/api/auth/token", max = 20, windowSeconds = 60)
+        route("/api/auth/register", max = 20, windowSeconds = 60)
+        route("/api/auth/resend-registration-code", max = 20, windowSeconds = 60)
+        route("/api/auth/forgot-password", max = 20, windowSeconds = 60)
+        route("/api/auth/reset-password", max = 20, windowSeconds = 60)
+        route("/api/auth/confirm-registration", max = 20, windowSeconds = 60)
+        route("/api/auth/verify-email", max = 20, windowSeconds = 60)
+        route("/api/auth/username-available", max = 20, windowSeconds = 60)
+        route("/api/auth/account-lookup", max = 20, windowSeconds = 60)
+        route("/api/auth/public-verification/", max = 20, windowSeconds = 60)
+        route("/api/auth/token/refresh", max = 30, windowSeconds = 60)
+        route("/api/auth/refresh", max = 30, windowSeconds = 60)
+        route("/api/auth/switch", max = 30, windowSeconds = 60)
+        route("/api/auth/logout", max = 30, windowSeconds = 60)
+        route("/api/users/me/avatar", max = 20, windowSeconds = 60)
+    }
+
+    val redisManager by inject<RedisManager>()
+    environment.monitor.subscribe(ApplicationStopping) {
+        redisManager.close()
+    }
+
     install(StatusPages) {
         exception<RequestValidationException> { call, cause ->
             val parts = cause.reasons.firstOrNull()?.split("|", limit = 2).orEmpty()
@@ -186,6 +228,7 @@ fun Application.module() {
     )
 
     val sessionRepository by inject<SessionRepository>()
+    val userRepository by inject<UserRepository>()
     val securityConfig by inject<SecurityConfig>()
     install(Authentication) {
         jwt {
@@ -240,7 +283,6 @@ fun Application.module() {
     val userController by inject<UserController>()
     val searchController by inject<SearchController>()
     val sessionController by inject<SessionController>()
-    val userRepository by inject<UserRepository>()
     val grpcPort = environment.config
         .propertyOrNull("identity.grpc.port")
         ?.getString()
@@ -297,6 +339,11 @@ fun Application.module() {
             val session = call.request.queryParameters["sid"]?.let { runCatching { sessionRepository.findById(it) }.getOrNull() }
             val userId = call.request.queryParameters["uid"]
             if (session != null && session.userId == userId && session.revokedAt == null && session.expiresAt.isAfter(java.time.Instant.now())) {
+                val user = userRepository.findById(userId)
+                if (user == null || user.status != "ACTIVE") {
+                    redisManager.revokeSession(session.id)
+                    call.respond(HttpStatusCode.Unauthorized); return@get
+                }
                 call.respond(HttpStatusCode.NoContent)
             } else call.respond(HttpStatusCode.Unauthorized)
         }

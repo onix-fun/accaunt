@@ -52,7 +52,9 @@ class ServerTest {
                 "s3.public_url" to "http://localhost:9000",
                 "s3.access_key" to "minio",
                 "s3.secret_key" to "minio",
-                "s3.bucket" to "avatars"
+                "s3.bucket" to "avatars",
+                "identity.security.otp_hmac_secret" to "test-otp-hmac-secret-at-least-32-characters!",
+                "identity.security.internal_auth_secret" to "test-internal-auth-secret-at-least-32-characters"
             )
         }
     }
@@ -103,7 +105,7 @@ class ServerTest {
         assertEquals("\"AUTH_INVALID_CREDENTIALS\"", loginError["code"].toString())
         assertNotNull(loginError["numericCode"])
         assertNotNull(loginError["fieldErrors"])
-        assertNotNull(loginError["requestId"])
+        assertNull(loginError["requestId"])
 
         val pendingLookup = client.get("/api/auth/account-lookup?identifier=testuser")
         assertEquals(HttpStatusCode.OK, pendingLookup.status)

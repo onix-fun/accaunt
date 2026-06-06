@@ -1,4 +1,5 @@
 import { profileClient } from "@/api/client";
+import { DeviceIdManager } from "@/shared/lib/deviceId";
 import type { AuthSession, User } from "@/domain";
 
 interface BrowserAuthResponse {
@@ -133,7 +134,7 @@ export class AuthService {
   static async login(payload: LoginPayload): Promise<User> {
     const response = await profileClient.post<BrowserAuthResponse>("/auth/login", {
       ...payload,
-      deviceId: window.navigator.userAgent,
+      deviceId: DeviceIdManager.getId(),
     });
     const user = rememberUser(normalizeUser(response.data.user));
     await this.loadAccounts();
@@ -149,7 +150,7 @@ export class AuthService {
     const response = await profileClient.post<BrowserAuthResponse>("/auth/confirm-registration", {
       identifier: email,
       code,
-      deviceId: window.navigator.userAgent,
+      deviceId: DeviceIdManager.getId(),
     });
     const user = rememberUser(normalizeUser(response.data.user));
     await this.loadAccounts();

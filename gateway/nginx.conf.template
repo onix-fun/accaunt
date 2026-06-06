@@ -47,6 +47,7 @@ http {
 
     server {
         listen 8089;
+        client_max_body_size 10m;
         proxy_intercept_errors on;
 
         add_header X-Correlation-Id $correlation_id always;
