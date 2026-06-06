@@ -47,6 +47,11 @@ services:
       IDENTITY_REDIS_URL: redis://account-redis:6379
       IDENTITY_SMTP_HOST: account-mail
       IDENTITY_SMTP_PORT: "1025"
+      IDENTITY_S3_ENDPOINT: http://account-minio:9000
+      IDENTITY_S3_PUBLIC_URL: ${S3_PUBLIC_URL:-http://localhost:${PORT:-8080}/api/avatars}
+      IDENTITY_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-account-minio}
+      IDENTITY_S3_SECRET_KEY: ${S3_SECRET_KEY:-account-minio-secret}
+      IDENTITY_S3_BUCKET: avatars
     volumes:
       - ./secrets/account-jwt-private.pem:/run/secrets/account-jwt-private.pem:ro
       - ./secrets/account-jwt-public.pem:/run/secrets/account-jwt-public.pem:ro
@@ -55,6 +60,8 @@ services:
         condition: service_healthy
       account-redis:
         condition: service_healthy
+      account-minio-init:
+        condition: service_completed_successfully
     networks:
       - account-network
     restart: unless-stopped
@@ -92,6 +99,31 @@ services:
       - account-network
     restart: unless-stopped
 
+  account-minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-account-minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-account-minio-secret}
+    volumes:
+      - account_minio_data:/data
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  account-minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - account-minio
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set local http://account-minio:9000 ${S3_ACCESS_KEY:-account-minio} ${S3_SECRET_KEY:-account-minio-secret}; do sleep 2; done;
+      /usr/bin/mc mb -p local/avatars || true;
+      /usr/bin/mc anonymous set download local/avatars;
+      "
+    networks:
+      - account-network
+
   account-mail:
     image: mailhog/mailhog:latest
     networks:
@@ -101,6 +133,7 @@ services:
 volumes:
   account_postgres_data:
   account_redis_data:
+  account_minio_data:
 
 networks:
   account-network:
