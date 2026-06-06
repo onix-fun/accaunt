@@ -7,10 +7,11 @@ import { trustedRedirectUrl } from "@/infra/navigation/trustedRedirect";
 import { useAuthStore } from "@/infra/store";
 import AvatarCropper from "@/features/avatar/ui/AvatarCropper.vue";
 import SessionsTab from "@/features/sessions/ui/SessionsTab.vue";
+import SystemTab from "@/features/profile/ui/SystemTab.vue";
 import AccountSwitchModal from "@/features/profile/ui/AccountSwitchModal.vue";
 import { userDisplayName, userInitials } from "@/shared/lib/user";
 
-type ProfileTab = "profile" | "sessions";
+type ProfileTab = "profile" | "sessions" | "system";
 type MessageTone = "success" | "error" | "warning";
 type EditableProfileField = "firstName" | "lastName" | "bio";
 
@@ -234,6 +235,16 @@ const revokeAvatarPreview = () => {
           <i class="pi pi-desktop"></i>
           <span class="visually-hidden">{{ t("profile.sessions") }}</span>
         </button>
+        <button
+          type="button"
+          :class="{ active: activeTab === 'system' }"
+          :aria-label="t('system.title')"
+          :title="t('system.title')"
+          @click="activeTab = 'system'"
+        >
+          <i class="pi pi-cog"></i>
+          <span class="visually-hidden">{{ t("system.title") }}</span>
+        </button>
       </nav>
 
       <div class="profile-stage">
@@ -314,7 +325,8 @@ const revokeAvatarPreview = () => {
           </form>
         </section>
 
-        <SessionsTab v-else @message="setMessage" />
+        <SessionsTab v-else-if="activeTab === 'sessions'" @message="setMessage" />
+        <SystemTab v-else @message="setMessage" />
       </div>
     </div>
 

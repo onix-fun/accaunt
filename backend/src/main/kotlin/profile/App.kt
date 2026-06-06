@@ -24,7 +24,9 @@ import org.koin.ktor.ext.inject
 import org.koin.ktor.plugin.Koin
 import org.koin.logger.slf4jLogger
 import profile.auth.AuthController
+import profile.auth.ChangePasswordRequest
 import profile.auth.ConfirmRegistrationRequest
+import profile.auth.DeleteAccountRequest
 import profile.auth.ForgotPasswordRequest
 import profile.auth.LoginRequest
 import profile.auth.RegisterRequest
@@ -103,6 +105,19 @@ fun Application.module() {
                 identifier.isBlank() -> ValidationResult.Invalid("Email or username cannot be blank")
                 !code.matches(Regex("\\d{6}")) -> ValidationResult.Invalid("Reset code must be 6 digits")
                 request.newPassword.length < 8 -> ValidationResult.Invalid("Password must be at least 8 characters")
+                else -> ValidationResult.Valid
+            }
+        }
+        validate<ChangePasswordRequest> { request ->
+            when {
+                request.currentPassword.isBlank() -> ValidationResult.Invalid("Current password cannot be blank")
+                request.newPassword.length < 8 -> ValidationResult.Invalid("Password must be at least 8 characters")
+                else -> ValidationResult.Valid
+            }
+        }
+        validate<DeleteAccountRequest> { request ->
+            when {
+                request.password.isBlank() -> ValidationResult.Invalid("Password cannot be blank")
                 else -> ValidationResult.Valid
             }
         }

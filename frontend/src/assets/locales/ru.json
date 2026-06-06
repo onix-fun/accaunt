@@ -88,5 +88,25 @@
     "zoom": "Масштаб",
     "rotate": "Повернуть",
     "cropInstructions": "Перетащите изображение и настройте масштаб."
+  },
+  "system": {
+    "title": "Система",
+    "changePassword": "Сменить пароль",
+    "changePasswordHint": "Введите текущий пароль и новый пароль. После смены текущая сессия будет завершена.",
+    "currentPassword": "Текущий пароль",
+    "changePasswordAction": "Сменить пароль",
+    "emailReset": "Сброс через email",
+    "emailResetHint": "Код сброса будет отправлен на {email}.",
+    "sendResetCode": "Отправить код",
+    "resendResetCode": "Отправить снова",
+    "resetCodeSent": "Код сброса отправлен.",
+    "resetPasswordAction": "Сбросить пароль",
+    "passwordChanged": "Пароль обновлен.",
+    "deleteAccount": "Удалить аккаунт",
+    "deleteAccountHint": "Это действие удалит аккаунт и завершит все связанные сессии.",
+    "deleteConfirmation": "Введите {email}, чтобы подтвердить удаление",
+    "deleteConfirmationError": "Подтверждение удаления не совпадает.",
+    "deleteAccountAction": "Удалить аккаунт",
+    "accountDeleted": "Аккаунт удален."
   }
 }

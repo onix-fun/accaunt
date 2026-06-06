@@ -103,6 +103,17 @@ data class ResetPasswordRequest(
     val newPassword: String
 )
 
+@Serializable
+data class ChangePasswordRequest(
+    val currentPassword: String,
+    val newPassword: String
+)
+
+@Serializable
+data class DeleteAccountRequest(
+    val password: String
+)
+
 fun User.toBrowserAccountDto() = BrowserAccountDto(
     id = id,
     email = email,

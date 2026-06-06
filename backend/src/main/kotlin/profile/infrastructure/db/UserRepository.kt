@@ -41,6 +41,7 @@ class UserRepository(private val dataSource: DataSource) {
         private const val UPDATE_PASSWORD_SQL = "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?"
         private const val FIND_BY_IDS_SQL = "SELECT * FROM users WHERE id IN (%s)"
         private const val FIND_ALL_SQL = "SELECT * FROM users"
+        private const val DELETE_SQL = "DELETE FROM users WHERE id = ?"
     }
 
     fun create(user: User) {
@@ -141,6 +142,16 @@ class UserRepository(private val dataSource: DataSource) {
                 stmt.setString(1, passwordHash)
                 stmt.setTimestamp(2, java.sql.Timestamp.from(Instant.now()))
                 stmt.setObject(3, UUID.fromString(userId))
+                stmt.executeUpdate()
+            }
+            conn.commit()
+        }
+    }
+
+    fun delete(userId: String) {
+        dataSource.connection.use { conn ->
+            conn.prepareStatement(DELETE_SQL).use { stmt ->
+                stmt.setObject(1, UUID.fromString(userId))
                 stmt.executeUpdate()
             }
             conn.commit()

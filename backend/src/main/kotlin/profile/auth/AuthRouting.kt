@@ -1,6 +1,7 @@
 package profile.auth
 
 import io.github.smiley4.ktorswaggerui.dsl.routing.get
+import io.github.smiley4.ktorswaggerui.dsl.routing.delete
 import io.github.smiley4.ktorswaggerui.dsl.routing.post
 import io.ktor.http.*
 import io.ktor.server.auth.*
@@ -115,6 +116,24 @@ fun Route.authRouting(authController: AuthController, sessionController: Session
                 description = "Revokes all refresh tokens and clears cookie"
                 response { code(HttpStatusCode.OK) { description = "Logged out from all devices" } }
             }) { authController.logoutAll(call) }
+
+            post("/change-password", {
+                tags = setOf("Auth")
+                securitySchemeNames("BearerToken")
+                summary = "Change password"
+                description = "Changes password using the current password and revokes existing sessions"
+                request { body<ChangePasswordRequest> { description = "Current and new password" } }
+                response { code(HttpStatusCode.OK) { description = "Password changed" } }
+            }) { authController.changePassword(call) }
+
+            delete("/account", {
+                tags = setOf("Auth")
+                securitySchemeNames("BearerToken")
+                summary = "Delete current account"
+                description = "Deletes the authenticated account after password confirmation"
+                request { body<DeleteAccountRequest> { description = "Password confirmation" } }
+                response { code(HttpStatusCode.OK) { description = "Account deleted" } }
+            }) { authController.deleteAccount(call) }
         }
 
         post("/forgot-password", {

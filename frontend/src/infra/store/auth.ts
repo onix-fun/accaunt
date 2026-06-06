@@ -137,6 +137,56 @@ export const useAuthStore = defineStore("auth", () => {
     await AuthService.resetPassword(identifier, code, newPassword);
   };
 
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      currentUser.value = await AuthService.changePassword(currentPassword, newPassword);
+      sessions.value = [];
+      syncAccounts();
+      if (currentUser.value) await fetchSessions();
+    } catch (cause) {
+      error.value = apiErrorMessage(cause);
+      throw cause;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  const resetPasswordAndEndSession = async (identifier: string, code: string, newPassword: string) => {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      await AuthService.resetPasswordAndEndSession(identifier, code, newPassword);
+      isCompletingRegistrationProfile.value = false;
+      currentUser.value = null;
+      sessions.value = [];
+      syncAccounts();
+    } catch (cause) {
+      error.value = apiErrorMessage(cause);
+      throw cause;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  const deleteAccount = async (password: string) => {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      isCompletingRegistrationProfile.value = false;
+      currentUser.value = await AuthService.deleteAccount(password);
+      sessions.value = [];
+      syncAccounts();
+      if (currentUser.value) await fetchSessions();
+    } catch (cause) {
+      error.value = apiErrorMessage(cause);
+      throw cause;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
   const fetchSessions = async () => {
     sessions.value = await AuthService.getSessions();
   };
@@ -202,6 +252,9 @@ export const useAuthStore = defineStore("auth", () => {
     resendVerification,
     forgotPassword,
     resetPassword,
+    changePassword,
+    resetPasswordAndEndSession,
+    deleteAccount,
     fetchSessions,
     revokeSession,
     logout,

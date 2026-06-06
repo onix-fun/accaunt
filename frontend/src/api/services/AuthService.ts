@@ -189,6 +189,26 @@ export class AuthService {
     await profileClient.post("/auth/reset-password", { identifier, code, newPassword });
   }
 
+  static async changePassword(currentPassword: string, newPassword: string): Promise<User | null> {
+    await profileClient.post("/auth/change-password", { currentPassword, newPassword });
+    currentUser = null;
+    await this.loadAccounts();
+    return accounts.length ? this.switchAccount(accounts[0].id) : null;
+  }
+
+  static async resetPasswordAndEndSession(identifier: string, code: string, newPassword: string): Promise<void> {
+    await this.resetPassword(identifier, code, newPassword);
+    currentUser = null;
+    accounts = [];
+  }
+
+  static async deleteAccount(password: string): Promise<User | null> {
+    await profileClient.delete("/auth/account", { data: { password } });
+    currentUser = null;
+    await this.loadAccounts();
+    return accounts.length ? this.switchAccount(accounts[0].id) : null;
+  }
+
   static async logout(): Promise<User | null> {
     await profileClient.post("/auth/logout");
     currentUser = null;

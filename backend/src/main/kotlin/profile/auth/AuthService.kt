@@ -186,6 +186,25 @@ class AuthService(
         sessionRepository.revokeAllForUser(token.userId)
     }
 
+    fun changePassword(userId: String, currentPassword: String, newPassword: String) {
+        val user = userRepository.findById(userId) ?: throw IllegalArgumentException("User not found")
+        if (!PasswordHasher.verify(user.passwordHash, currentPassword)) {
+            throw IllegalArgumentException("Current password is invalid")
+        }
+
+        userRepository.updatePassword(userId, PasswordHasher.hash(newPassword))
+        sessionRepository.revokeAllForUser(userId)
+    }
+
+    fun deleteAccount(userId: String, password: String) {
+        val user = userRepository.findById(userId) ?: throw IllegalArgumentException("User not found")
+        if (!PasswordHasher.verify(user.passwordHash, password)) {
+            throw IllegalArgumentException("Current password is invalid")
+        }
+
+        userRepository.delete(userId)
+    }
+
     fun login(
         identifier: String,
         password: String,

@@ -142,6 +142,34 @@ class AuthController(
         call.respond(HttpStatusCode.OK, mapOf("message" to "Password has been reset successfully"))
     }
 
+    suspend fun changePassword(call: ApplicationCall) {
+        val userId = call.principal<JWTPrincipal>()!!.payload.subject
+        val request = call.receive<ChangePasswordRequest>()
+        authService.changePassword(userId, request.currentPassword, request.newPassword)
+
+        requestRefreshTokens(call)
+            .keys
+            .filter { it == userId }
+            .forEach { call.response.cookies.append(clearRefreshCookie(it)) }
+        clearActiveBrowserSession(call)
+
+        call.respond(HttpStatusCode.OK, mapOf("message" to "Password has been changed successfully"))
+    }
+
+    suspend fun deleteAccount(call: ApplicationCall) {
+        val userId = call.principal<JWTPrincipal>()!!.payload.subject
+        val request = call.receive<DeleteAccountRequest>()
+        authService.deleteAccount(userId, request.password)
+
+        requestRefreshTokens(call)
+            .keys
+            .filter { it == userId }
+            .forEach { call.response.cookies.append(clearRefreshCookie(it)) }
+        clearActiveBrowserSession(call)
+
+        call.respond(HttpStatusCode.OK, mapOf("message" to "Account has been deleted"))
+    }
+
     suspend fun refresh(call: ApplicationCall) {
         val browserAccount = resolveBrowserAccount(call)
         if (browserAccount == null) {

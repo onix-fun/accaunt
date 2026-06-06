@@ -88,5 +88,25 @@
     "zoom": "Zoom",
     "rotate": "Rotate",
     "cropInstructions": "Drag the image and adjust zoom."
+  },
+  "system": {
+    "title": "System",
+    "changePassword": "Change password",
+    "changePasswordHint": "Enter the current password and a new password. The current session will end after the change.",
+    "currentPassword": "Current password",
+    "changePasswordAction": "Change password",
+    "emailReset": "Reset by email",
+    "emailResetHint": "The reset code will be sent to {email}.",
+    "sendResetCode": "Send code",
+    "resendResetCode": "Send again",
+    "resetCodeSent": "Reset code sent.",
+    "resetPasswordAction": "Reset password",
+    "passwordChanged": "Password updated.",
+    "deleteAccount": "Delete account",
+    "deleteAccountHint": "This action deletes the account and ends all related sessions.",
+    "deleteConfirmation": "Enter {email} to confirm deletion",
+    "deleteConfirmationError": "Delete confirmation does not match.",
+    "deleteAccountAction": "Delete account",
+    "accountDeleted": "Account deleted."
   }
 }
