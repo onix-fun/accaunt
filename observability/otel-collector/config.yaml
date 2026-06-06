@@ -3,8 +3,12 @@ receivers:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth/otel
       http:
         endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth/otel
 
   file_log/account-gateway:
     include:
@@ -37,10 +41,13 @@ exporters:
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
+  bearertokenauth/otel:
+    token: "${env:OTEL_AUTH_TOKEN}"
 
 service:
   extensions:
     - health_check
+    - bearertokenauth/otel
   pipelines:
     traces:
       receivers:

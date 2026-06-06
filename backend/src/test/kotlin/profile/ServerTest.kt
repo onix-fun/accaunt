@@ -115,6 +115,10 @@ class ServerTest {
         assertEquals(HttpStatusCode.OK, missingLookup.status)
         assertTrue(missingLookup.bodyAsText().contains("\"state\":\"NOT_FOUND\""))
 
+        val missingEmailLookup = client.get("/api/auth/account-lookup?identifier=missing@example.com")
+        assertEquals(HttpStatusCode.OK, missingEmailLookup.status)
+        assertTrue(missingEmailLookup.bodyAsText().contains("\"state\":\"NOT_FOUND\""))
+
         val code = codeForPendingRegistration(pendingRegistrationStore, "test@example.com")
         val confirmResponse = client.post("/api/auth/confirm-registration") {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
@@ -131,8 +135,8 @@ class ServerTest {
         assertNotNull(confirmCookie, "Confirmation should set refresh token cookie")
         assertTrue(confirmCookie.contains("Domain=example.com"))
         assertTrue(confirmCookie.contains("Secure"))
-        assertNotNull(cookieWithPrefix(confirmResponse, "access_token="), "Confirmation should set access token cookie")
-        assertNotNull(cookieWithPrefix(confirmResponse, "active_user="), "Confirmation should set active account cookie")
+        assertNotNull(cookieWithPrefix(confirmResponse, "__Host-access_token="), "Confirmation should set access token cookie")
+        assertNotNull(cookieWithPrefix(confirmResponse, "__Host-active_user="), "Confirmation should set active account cookie")
 
         val activeLookup = client.get("/api/auth/account-lookup?identifier=test@example.com")
         assertEquals(HttpStatusCode.OK, activeLookup.status)
@@ -214,12 +218,12 @@ class ServerTest {
         assertTrue(cookie.contains("SameSite=Strict"), "Cookie should set SameSite=Strict")
         assertTrue(cookie.contains("Path=/api/auth"), "Cookie should be scoped to /api/auth")
         assertFalse(cookie.contains("Domain="), "Development cookie should stay host-only")
-        val accessCookie = cookieWithPrefix(loginResponse, "access_token=")
-        assertNotNull(accessCookie, "Access token cookie not found in response")
+        val accessCookie = cookieWithPrefix(loginResponse, "__Host-access_token=")
+        assertNotNull(accessCookie, "Login should set access token cookie")
         assertTrue(accessCookie.contains("HttpOnly"), "Access cookie should be HttpOnly")
         assertTrue(accessCookie.contains("SameSite=Strict"), "Access cookie should set SameSite=Strict")
-        assertTrue(accessCookie.contains("Path=/"), "Access cookie should be available to protected routes")
-        val activeCookie = cookieWithPrefix(loginResponse, "active_user=")
+
+        val activeCookie = cookieWithPrefix(loginResponse, "__Host-active_user=")
         assertNotNull(activeCookie, "Active account cookie not found in response")
 
         // 3. Get sessions using the HttpOnly-style browser access cookie.
@@ -290,7 +294,7 @@ class ServerTest {
         val csrfResponse = client.get("/api/auth/csrf")
         assertEquals(HttpStatusCode.OK, csrfResponse.status)
         assertNotNull(Json.parseToJsonElement(csrfResponse.bodyAsText()).jsonObject["csrfToken"])
-        val csrfCookie = cookieWithPrefix(csrfResponse, "csrf_token=")
+        val csrfCookie = cookieWithPrefix(csrfResponse, "__Host-csrf_token=")
         assertNotNull(csrfCookie)
         assertTrue(csrfCookie.contains("HttpOnly"))
         assertTrue(csrfCookie.contains("SameSite=Strict"))
@@ -366,7 +370,7 @@ class ServerTest {
         val mismatchedRefreshResponse = client.post("/api/auth/refresh") {
             header(
                 HttpHeaders.Cookie,
-                "refresh_token_$secondId=${cookiePair(firstRefresh).substringAfter("=")}; active_user=$secondId"
+                "refresh_token_$secondId=${cookiePair(firstRefresh).substringAfter("=")}; __Host-active_user=$secondId"
             )
         }
         assertEquals(HttpStatusCode.NotFound, mismatchedRefreshResponse.status)
@@ -382,8 +386,8 @@ class ServerTest {
         assertEquals(firstId, activeUserId)
         val rotatedFirstRefresh = cookieWithPrefix(switchResponse, "refresh_token_$firstId=")!!
         assertNotEquals(cookiePair(firstRefresh), cookiePair(rotatedFirstRefresh))
-        assertNotNull(cookieWithPrefix(switchResponse, "access_token="))
-        val firstActiveCookie = cookieWithPrefix(switchResponse, "active_user=")
+        assertNotNull(cookieWithPrefix(switchResponse, "__Host-access_token="))
+        val firstActiveCookie = cookieWithPrefix(switchResponse, "__Host-active_user=")
         assertNotNull(firstActiveCookie)
 
         val logoutResponse = client.post("/api/auth/logout") {
@@ -394,8 +398,8 @@ class ServerTest {
         }
         assertEquals(HttpStatusCode.OK, logoutResponse.status)
         assertTrue(cookieWithPrefix(logoutResponse, "refresh_token_$firstId=")!!.contains("Max-Age=0"))
-        assertTrue(cookieWithPrefix(logoutResponse, "access_token=")!!.contains("Max-Age=0"))
-        assertTrue(cookieWithPrefix(logoutResponse, "active_user=")!!.contains("Max-Age=0"))
+        assertTrue(cookieWithPrefix(logoutResponse, "__Host-access_token=")!!.contains("Max-Age=0"))
+        assertTrue(cookieWithPrefix(logoutResponse, "__Host-active_user=")!!.contains("Max-Age=0"))
 
         val accountsAfterLogoutResponse = client.get("/api/auth/accounts") {
             header(

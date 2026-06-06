@@ -72,7 +72,7 @@ const steps = [
 
       <form v-else-if="flow.mode.value === 'password'" class="account-form" @submit.prevent="flow.login">
         <div class="account-chip">
-          <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
+          <img v-if="flow.accountAvatarUrl.value" class="account-chip-avatar" :src="flow.accountAvatarUrl.value" alt="" />
           <i v-else class="pi pi-user"></i>
           <span>{{ flow.accountDisplayName.value }}</span>
         </div>
@@ -207,7 +207,7 @@ const steps = [
 
       <form v-else-if="flow.mode.value === 'verify'" class="account-form" @submit.prevent="flow.confirmPublicVerification">
         <div class="account-chip">
-          <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
+          <img v-if="flow.accountAvatarUrl.value" class="account-chip-avatar" :src="flow.accountAvatarUrl.value" alt="" />
           <i v-else class="pi pi-envelope"></i>
           <span>{{ flow.accountDisplayName.value }}</span>
         </div>
@@ -262,7 +262,8 @@ const steps = [
 
       <form v-else-if="flow.mode.value === 'name'" class="account-form" @submit.prevent="flow.completeNameStep">
         <div class="account-chip">
-          <i class="pi pi-check-circle"></i>
+          <img v-if="flow.accountAvatarUrl.value" class="account-chip-avatar" :src="flow.accountAvatarUrl.value" alt="" />
+          <i v-else class="pi pi-check-circle"></i>
           <span>{{ authStore.currentUser?.username }}</span>
         </div>
         <label class="field">
@@ -300,7 +301,7 @@ const steps = [
 
       <form v-else class="account-form" @submit.prevent="flow.submitResetPassword">
         <div class="account-chip">
-          <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
+          <img v-if="flow.accountAvatarUrl.value" class="account-chip-avatar" :src="flow.accountAvatarUrl.value" alt="" />
           <i v-else class="pi pi-user"></i>
           <span>{{ flow.accountDisplayName.value }}</span>
         </div>

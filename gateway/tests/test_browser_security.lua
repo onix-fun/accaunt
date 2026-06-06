@@ -32,7 +32,7 @@ assert(not security.is_allowed_origin("https://evil.test"))
 assert(not security.is_allowed_origin("http://account.example.com"))
 
 ngx.var.http_origin = "https://account.example.com"
-ngx.var.http_cookie = "csrf_token=expected"
+ngx.var.http_cookie = "__Host-csrf_token=expected"
 ngx.var.http_x_csrf_token = "expected"
 assert(security.enforce_csrf())
 
@@ -43,6 +43,10 @@ assert(last_message:match("Valid CSRF token"))
 assert(last_message:match('"code":"SECURITY_CSRF_INVALID"'))
 assert(last_message:match('"numericCode":5100'))
 -- requestId removed from error responses
+
+ngx.var.http_cookie = "csrf_token=expected"
+ngx.var.http_x_csrf_token = "expected"
+assert(security.enforce_csrf())
 
 ngx.var.http_authorization = "Bearer test"
 assert(security.enforce_csrf())

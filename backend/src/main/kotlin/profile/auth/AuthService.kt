@@ -179,6 +179,10 @@ class AuthService(
         revokeCachedSessions(user.id)
         sessionRepository.revokeAllForUser(user.id)
         auditRepository.record(user.id, "PASSWORD_RESET", "SUCCESS")
+        val userEmail = userRepository.findById(user.id)?.email
+        if (userEmail != null) {
+            eventPublisher.publish("email.security_notice", Json.encodeToString(SecurityNotificationPayload(userEmail, "Your password has been reset.")))
+        }
     }
 
     fun changePassword(userId: String, currentPassword: String, newPassword: String) {
@@ -191,6 +195,7 @@ class AuthService(
         revokeCachedSessions(userId)
         sessionRepository.revokeAllForUser(userId)
         auditRepository.record(userId, "PASSWORD_CHANGED", "SUCCESS")
+        eventPublisher.publish("email.security_notice", Json.encodeToString(SecurityNotificationPayload(user.email, "Your password has been changed.")))
     }
 
     fun deleteAccount(userId: String, password: String) {
@@ -213,7 +218,7 @@ class AuthService(
         if (user.status != "ACTIVE") apiError(ApiErrorCode.AUTH_ACCOUNT_BLOCKED, "identifier")
         if (!user.emailVerified) apiError(ApiErrorCode.AUTH_EMAIL_NOT_VERIFIED, "identifier")
 
-        if (redisManager.getAccountFailedAttempts(user.id) >= 10) {
+        if (redisManager.getAccountFailedAttempts(user.id) >= 5) {
             apiError(ApiErrorCode.AUTH_ACCOUNT_BLOCKED, "identifier")
         }
 
@@ -241,7 +246,7 @@ class AuthService(
         val sessionId = sessionRepository.create(session)
         redisManager.activateSession(sessionId, user.id, sessionConfig.refreshTokenExpDays * 86400)
 
-        val accessToken = jwtIssuer.createToken(user.id, sessionId, user.role)
+        val accessToken = jwtIssuer.createToken(user.id, sessionId)
 
         return LoginResult(accessToken, refreshToken, sessionId, user)
     }
@@ -266,7 +271,7 @@ class AuthService(
             apiError(ApiErrorCode.AUTH_INVALID_REFRESH_TOKEN)
         }
 
-        val accessToken = jwtIssuer.createToken(user.id, session.id, user.role)
+        val accessToken = jwtIssuer.createToken(user.id, session.id)
 
         return RefreshResult(accessToken, newRefreshToken, session.id, user)
     }
@@ -316,22 +321,24 @@ class AuthService(
     fun lookupAccount(identifier: String): AccountLookupResponse {
         val normalized = identifier.trim()
         if (normalized.isBlank()) apiError(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
-        if (normalized.contains("@")) {
+        val lookupIdentifier = if (normalized.contains("@")) {
             EmailNormalizer.normalize(normalized, "identifier")
-            return AccountLookupResponse("EMAIL_LOGIN", "")
+        } else {
+            normalized
         }
-        val pending = pendingRegistrationStore.findByIdentifier(normalized)
+        val pending = pendingRegistrationStore.findByIdentifier(lookupIdentifier)
         if (pending != null) {
-            return AccountLookupResponse("PENDING_REGISTRATION", normalized, pending.username)
+            return AccountLookupResponse("PENDING_REGISTRATION", lookupIdentifier)
         }
-        val user = findUserByIdentifier(normalized)
-            ?: return AccountLookupResponse("NOT_FOUND", normalized)
+        val user = findUserByIdentifier(lookupIdentifier)
+            ?: return AccountLookupResponse("NOT_FOUND", lookupIdentifier)
         val state = when {
             user.status != "ACTIVE" -> "BLOCKED"
             !user.emailVerified -> "EMAIL_UNVERIFIED"
+            normalized.contains("@") -> "EMAIL_LOGIN"
             else -> "ACTIVE"
         }
-        return AccountLookupResponse(state, normalized, user.username, user.avatarUrl)
+        return AccountLookupResponse(state, lookupIdentifier, user.avatarUrl)
     }
 
     fun requestPublicEmailVerification(identifier: String) {
@@ -382,6 +389,7 @@ class AuthService(
         sessionRepository.revokeAllExcept(userId, sessionId)
         auditRepository.record(userId, "EMAIL_CHANGED", "SUCCESS")
         eventPublisher.publish("email.security_notice", Json.encodeToString(SecurityNotificationPayload(oldEmail, "Your account email address was changed.")))
+        eventPublisher.publish("email.security_notice", Json.encodeToString(SecurityNotificationPayload(pending.newEmail, "This email address was added to your account.")))
     }
 
     fun cancelEmailChange(userId: String) {

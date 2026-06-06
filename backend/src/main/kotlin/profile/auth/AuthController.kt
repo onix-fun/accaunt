@@ -201,7 +201,7 @@ class AuthController(
     }
 
     suspend fun logout(call: ApplicationCall) {
-        val userId = call.request.cookies[ACTIVE_USER_COOKIE_NAME]?.let(::parseUserId)
+        val userId = activeUserId(call)
         val refreshToken = userId?.let { call.request.cookies[getRefreshCookieName(it)] }
         if (refreshToken != null) {
             authService.logout(refreshToken)
@@ -260,7 +260,7 @@ class AuthController(
     private fun resolveBrowserAccount(call: ApplicationCall): Pair<String, String>? {
         val refreshTokens = requestRefreshTokens(call)
         val preferredIds = listOfNotNull(
-            call.request.cookies[ACTIVE_USER_COOKIE_NAME]?.let(::parseUserId)
+            activeUserId(call)
         )
 
         preferredIds.forEach { userId ->
@@ -315,24 +315,24 @@ class AuthController(
     }
 
     private fun accessCookie(value: String) = browserCookie(
-        name = ACCESS_COOKIE_NAME,
+        name = browserCookieName(ACCESS_COOKIE_NAME),
         value = value,
         maxAge = accessCookieMaxAgeSeconds(),
         sameSite = "Strict"
     )
 
-    private fun clearAccessCookie() = browserCookie(name = ACCESS_COOKIE_NAME, value = "", maxAge = 0, sameSite = "Strict")
+    private fun clearAccessCookie() = browserCookie(name = browserCookieName(ACCESS_COOKIE_NAME), value = "", maxAge = 0, sameSite = "Strict")
 
     private fun activeUserCookie(userId: String) = browserCookie(
-        name = ACTIVE_USER_COOKIE_NAME,
+        name = browserCookieName(ACTIVE_USER_COOKIE_NAME),
         value = userId,
         maxAge = refreshCookieMaxAgeSeconds()
     )
 
-    private fun clearActiveUserCookie() = browserCookie(name = ACTIVE_USER_COOKIE_NAME, value = "", maxAge = 0)
+    private fun clearActiveUserCookie() = browserCookie(name = browserCookieName(ACTIVE_USER_COOKIE_NAME), value = "", maxAge = 0)
 
     private fun csrfCookie(value: String) = browserCookie(
-        name = CSRF_COOKIE_NAME,
+        name = browserCookieName(CSRF_COOKIE_NAME),
         value = value,
         maxAge = refreshCookieMaxAgeSeconds(),
         sameSite = "Strict"
@@ -344,11 +344,21 @@ class AuthController(
             value = value,
             httpOnly = true,
             secure = sessionConfig.cookieSecure,
-            domain = sessionConfig.cookieDomain,
+            domain = if (name.startsWith("__Host-")) null else sessionConfig.cookieDomain,
             path = "/",
             maxAge = maxAge,
             extensions = mapOf("SameSite" to sameSite)
         )
+    }
+
+    private fun browserCookieName(name: String): String {
+        return if (sessionConfig.cookieSecure) "__Host-$name" else name
+    }
+
+    private fun activeUserId(call: ApplicationCall): String? {
+        return (call.request.cookies["__Host-$ACTIVE_USER_COOKIE_NAME"]
+            ?: call.request.cookies[ACTIVE_USER_COOKIE_NAME])
+            ?.let(::parseUserId)
     }
 
     private fun refreshCookieMaxAgeSeconds(): Int {

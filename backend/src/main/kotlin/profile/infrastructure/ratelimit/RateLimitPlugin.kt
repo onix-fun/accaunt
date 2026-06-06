@@ -32,8 +32,8 @@ val RateLimit = createApplicationPlugin("RateLimit", ::RateLimitConfig) {
         }?.value
 
         if (matchedRule != null) {
-            val clientIp = call.request.local.remoteHost
-                ?: call.request.headers["X-Forwarded-For"]?.split(",")?.first()?.trim()
+            val clientIp = call.request.headers["X-Real-IP"]
+                ?: call.request.local.remoteHost
                 ?: "unknown"
             val allowed = redisManager.checkRateLimit(
                 scope = "ratelimit:${matchedRule.hashCode()}",

@@ -17,6 +17,7 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.requestvalidation.*
 import io.ktor.server.plugins.statuspages.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.launch
@@ -195,6 +196,26 @@ fun Application.module() {
         route("/api/users/me/avatar", max = 20, windowSeconds = 60)
     }
 
+    // CSRF validation (defense-in-depth — gateway also validates)
+    intercept(ApplicationCallPipeline.Call) {
+        val method = call.request.httpMethod
+        if (method in setOf(HttpMethod.Post, HttpMethod.Put, HttpMethod.Patch, HttpMethod.Delete)) {
+            val path = call.request.path()
+            val isAuthTokenPath = path == "/api/auth/token" || path == "/api/auth/token/refresh" || path == "/api/auth/csrf"
+            val hasBearer = call.request.headers[HttpHeaders.Authorization]?.startsWith("Bearer ", ignoreCase = true) == true
+            if (!isAuthTokenPath && !hasBearer) {
+                val headerToken = call.request.headers["X-CSRF-Token"] ?: ""
+                val cookieToken = call.request.cookies["__Host-csrf_token"]
+                    ?: call.request.cookies["csrf_token"]
+                    ?: ""
+                if (headerToken.isBlank() || cookieToken.isBlank() || !java.security.MessageDigest.isEqual(headerToken.toByteArray(), cookieToken.toByteArray())) {
+                    call.respondApiError(ApiErrorCode.SECURITY_CSRF_INVALID)
+                    return@intercept
+                }
+            }
+        }
+    }
+
     val redisManager by inject<RedisManager>()
     environment.monitor.subscribe(ApplicationStopping) {
         redisManager.close()
@@ -234,7 +255,8 @@ fun Application.module() {
         jwt {
             authHeader { call ->
                 call.request.parseAuthorizationHeader()
-                    ?: call.request.cookies["access_token"]?.let { HttpAuthHeader.Single("Bearer", it) }
+                    ?: (call.request.cookies["__Host-access_token"] ?: call.request.cookies["access_token"])
+                        ?.let { HttpAuthHeader.Single("Bearer", it) }
             }
             verifier(
                 JWT.require(Algorithm.RSA256(jwtPublicKey, null))

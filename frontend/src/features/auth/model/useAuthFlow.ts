@@ -62,8 +62,9 @@ export function useAuthFlow() {
   const registerPasswordValid = computed(() => isPassword(registerForm.value.password));
   const registerPasswordsMatch = computed(() => Boolean(registerForm.value.confirmPassword) && !registerPasswordMismatch.value);
   const accountDisplayName = computed(() => {
-    return accountLookup.value?.username || registerForm.value.username || loginIdentifier.value.trim();
+    return authStore.currentUser?.username || registerForm.value.username || loginIdentifier.value.trim();
   });
+  const accountAvatarUrl = computed(() => accountLookup.value?.avatarUrl || authStore.currentUser?.avatarUrl || "");
   const validateIdentifier = (rawValue: string) => {
     const value = rawValue.trim();
     if (!value) return t("errors.VALIDATION_REQUIRED_FIELD");
@@ -164,8 +165,8 @@ export function useAuthFlow() {
     if (lookup.state === "NOT_FOUND") {
       openRegistrationForIdentifier(identifier);
     } else if (lookup.state === "PENDING_REGISTRATION") {
-      pendingRegistrationEmail.value = identifier;
-      await AuthService.resendRegistrationCode(identifier);
+      pendingRegistrationEmail.value = lookup.identifier;
+      await AuthService.resendRegistrationCode(lookup.identifier);
       mode.value = "confirm";
       authMessage.value = t("auth.verificationResent");
     } else if (lookup.state === "EMAIL_UNVERIFIED") {
@@ -185,8 +186,8 @@ export function useAuthFlow() {
     lookupPurpose.value = "login";
     isLookupLoading.value = true;
     try {
-      accountLookup.value = await AuthService.lookupAccount(loginIdentifier.value);
-      const lookup = accountLookup.value;
+      const lookup = await AuthService.lookupAccount(loginIdentifier.value);
+      accountLookup.value = lookup;
       if (lookup.state === "ACTIVE" || lookup.state === "EMAIL_LOGIN") {
         mode.value = "password";
       } else {
@@ -235,7 +236,6 @@ export function useAuthFlow() {
     if (!isVerificationCode(publicVerificationCode.value)) return;
     try {
       await AuthService.confirmPublicVerification(loginIdentifier.value, publicVerificationCode.value);
-      accountLookup.value = await AuthService.lookupAccount(loginIdentifier.value);
       if (lookupPurpose.value === "forgot") {
         await startPasswordReset(loginIdentifier.value);
       } else {
@@ -290,16 +290,16 @@ export function useAuthFlow() {
     authMessage.value = "";
     fieldErrors.value = {};
     if (forgotIdentifierError.value) return;
-    isLookupLoading.value = true;
+    loginIdentifier.value = forgotIdentifier.value.trim();
     lookupPurpose.value = "forgot";
+    isLookupLoading.value = true;
     try {
-      accountLookup.value = await AuthService.lookupAccount(forgotIdentifier.value);
-      const lookup = accountLookup.value;
-      loginIdentifier.value = forgotIdentifier.value.trim();
+      const lookup = await AuthService.lookupAccount(loginIdentifier.value);
+      accountLookup.value = lookup;
       if (lookup.state === "ACTIVE" || lookup.state === "EMAIL_LOGIN") {
-        await startPasswordReset(forgotIdentifier.value);
+        await startPasswordReset(loginIdentifier.value);
       } else {
-        await handleUnavailableAccount(forgotIdentifier.value, lookup);
+        await handleUnavailableAccount(loginIdentifier.value, lookup);
       }
     } catch (cause) {
       captureError(cause);
@@ -334,7 +334,7 @@ export function useAuthFlow() {
 
   return {
     activeStep,
-    accountLookup,
+    accountAvatarUrl,
     accountDisplayName,
     authMessage,
     canRegister,

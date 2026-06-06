@@ -31,6 +31,9 @@ for cidr in $ACCOUNT_TRUSTED_PROXY_CIDRS; do
 done
 IFS=$old_ifs
 
+# Ensure log directory is writable (volume may have wrong ownership from earlier runs)
+chown -R nginx:nginx /var/log/account 2>/dev/null || true
+
 export ACCOUNT_LOGIN_RATE
 export ACCOUNT_RECOVERY_RATE
 export ACCOUNT_CONFIRMATION_RATE
