@@ -1,2 +1,37 @@
-/secrets/dev/*.pem
-/prod/secrets/*.pem
+# IDEs
+.idea/
+.veai/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Secrets and keys
+secrets/
+dev/secrets/
+example/secrets/
+*.pem
+
+# Environments
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Build and dependencies (fallback, mostly covered in subdirectories)
+node_modules/
+dist/
+target/
+build/
