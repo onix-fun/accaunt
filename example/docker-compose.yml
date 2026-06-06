@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   account-gateway:
-    image: ghcr.io/onix-fun/account/gateway:${TAG:-latest}
+    image: ghcr.io/onix-fun/accaunt/gateway:${TAG:-latest}
     env_file:
       - .env
     environment:
@@ -24,13 +24,13 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ghcr.io/onix-fun/account/frontend:${TAG:-latest}
+    image: ghcr.io/onix-fun/accaunt/frontend:${TAG:-latest}
     restart: unless-stopped
     networks:
       - account-network
 
   profile:
-    image: ghcr.io/onix-fun/account/backend:${TAG:-latest}
+    image: ghcr.io/onix-fun/accaunt/backend:${TAG:-latest}
     env_file:
       - .env
     environment:
