@@ -1,5 +1,25 @@
-# Vue 3 + TypeScript + Vite
+# Пользовательский интерфейс (Frontend)
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Приложение написано на **Vue 3** с использованием **TypeScript** и сборщика **Vite**. В качестве стилизации используется TailwindCSS.
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+Для компонентов используется синтаксис `<script setup>`. Подробнее читайте в [документации Vue 3 (script setup)](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup).
+
+## Архитектура
+
+- **Работа через Gateway:** В production-среде и при разработке фронтенд не обращается к бэкенду напрямую через абсолютные пути, а использует относительный путь `/api`. Nginx (Gateway) сам перенаправляет эти запросы на бэкенд, что исключает любые проблемы с CORS.
+
+## Локальный запуск
+
+Приложение является частью монорепозитория. Самый простой способ запуска — использовать команду `make up` в корне проекта, которая:
+1. Запустит инфраструктуру бэкенда и гейтвея в Docker.
+2. Автоматически запустит этот фронтенд сервер с помощью `npm run dev`.
+
+### Ручной запуск
+Если вы хотите запустить фронтенд отдельно (например, для проверки верстки):
+
+```bash
+npm install
+npm run dev
+```
+
+Сервер Vite будет доступен на порту `5174`.

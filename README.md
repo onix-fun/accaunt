@@ -1,18 +1,42 @@
-# Account
+# Сервис авторизации (Account)
 
-Account boundary monorepo:
+Монорепозиторий для сервиса аккаунтов (Account) и авторизации.
 
-- `backend/`: Kotlin identity and profile backend
-- `frontend/`: Vue account UI
-- `gateway/`: OpenResty public gateway for `account.<base-domain>`
+## Структура проекта
 
-Generate local RS256 keys and start the standalone account stack:
+- `backend/` — Бэкенд сервиса профилей и авторизации на Kotlin (Ktor).
+- `frontend/` — Пользовательский интерфейс аккаунта на Vue 3 + TypeScript.
+- `gateway/` — Публичный шлюз на базе OpenResty (Nginx + Lua), выступающий как единая точка входа для приложения.
+- `dev/` — Директория с конфигурацией для локального запуска (инфраструктура, генерация ключей и переменные окружения).
+- `example/` — Пример продакшен-конфигурации (Docker Compose + `.env.example`), которая использует готовые образы из GitHub Container Registry (GHCR).
 
-```sh
-./scripts/generate-dev-keys.sh
-docker compose up --build
+## Локальный запуск (Разработка)
+
+Для удобства локальной разработки в корне проекта предусмотрен `Makefile`. Он автоматически генерирует RSA ключи, запускает инфраструктуру (базу данных, шлюз, бэкенд и т.д.) через Docker Compose и поднимает локальный сервер для фронтенда с Hot-Reload.
+
+```bash
+make up
 ```
 
-The gateway listens on `http://localhost:8089`. For Vite development run the
-frontend separately on `http://localhost:5174`; its `/api` proxy targets the
-account gateway.
+- Гейтвей будет доступен по адресу `http://localhost:8089`. Запросы к `/` перенаправляются на локальный сервер фронтенда (Vite HMR также поддерживается и проксируется).
+- Локальный фронтенд-сервер (Vite) запускается на порту `5174` (порт автоматически очищается при повторных запусках `make up`).
+
+Для остановки всех контейнеров используйте:
+```bash
+make down
+```
+
+Остановить и удалить все тома (очистить базу данных и кэш):
+```bash
+make clean
+```
+
+## Развертывание (Production)
+
+При пуше тегов (например, `front_v1.0.0`, `back_v1.0.0`, `gate_v1.0.0`) GitHub Actions автоматически собирает и публикует Docker-образы в GitHub Container Registry (`ghcr.io`).
+
+Для запуска в продакшене:
+1. Перейдите в папку `example/`.
+2. Скопируйте `.env.example` в `.env` и настройте параметры (домены, секреты, доступы).
+3. Создайте папку `secrets/` внутри `example/` и положите туда ваши RSA ключи `account-jwt-private.pem` и `account-jwt-public.pem`.
+4. Запустите `docker-compose up -d`.

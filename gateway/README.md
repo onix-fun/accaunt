@@ -1,19 +1,23 @@
-# Account Gateway
+# Account Gateway (Шлюз API)
 
-OpenResty gateway for `account.<base-domain>`. It serves the account SPA and proxies
-identity API routes to the identity backend. The main application gateway must not proxy
-these routes.
+Шлюз на базе **OpenResty (Nginx + Lua)**, выступающий в роли единой точки входа (`entrypoint`) для сервиса аккаунтов. Он обслуживает SPA-приложение (фронтенд) и проксирует маршруты API к бэкенду. 
 
-The gateway validates RS256 access tokens using the mounted public PEM. Browser
-requests use the shared parent-domain `access_token` cookie; external clients can use
-`Authorization: Bearer`. Bearer auth takes priority.
+## Функции
 
-Generate local keys from the account repository root:
+- **Проксирование фронтенда:** Перенаправление всех запросов на `/` к контейнеру фронтенда.
+- **Защита API бэкенда:** Проверка JWT-токенов (с алгоритмом RS256) прямо на уровне Nginx (с помощью Lua скриптов) перед передачей запроса бэкенду.
+- **Два метода авторизации:**
+  - **Браузерные клиенты (Web):** Используется Cookie `access_token`. Шлюз также жестко проверяет наличие `X-CSRF-Token`.
+  - **Мобильные и внешние клиенты:** Могут использовать заголовок `Authorization: Bearer <token>`. При использовании Bearer-токена проверка CSRF корректно пропускается, так как она актуальна только для браузеров.
+- **Ограничение частоты запросов (Rate Limiting):** Защита API авторизации, регистрации и загрузки файлов от брутфорс и DDoS атак (настраивается через `.env`).
 
-```sh
-./scripts/generate-dev-keys.sh
-```
+## Ключи
 
-Production ingress must terminate TLS and send `X-Forwarded-For`. Configure
-`ACCOUNT_TRUSTED_PROXY_CIDRS` with only ingress CIDRs. Set `ACCOUNT_HSTS_HEADER` only
-after HTTPS is enabled across all trusted subdomains.
+Шлюз использует публичный PEM-ключ для проверки подписи JWT-токенов, выданных бэкендом. 
+Локально ключи генерируются автоматически при выполнении `make up` в корне проекта. Вручную можно сгенерировать ключи с помощью скрипта `dev/scripts/generate-dev-keys.sh`.
+
+## Production
+
+На проде Ingress-контроллер должен терминировать TLS и передавать правильный заголовок `X-Forwarded-For`. Конфигурация:
+- Настройте `ACCOUNT_TRUSTED_PROXY_CIDRS`, указав только доверенные IP-адреса вашего Ingress/Балансировщика.
+- Передавайте переменную `ACCOUNT_TRUSTED_BASE_DOMAIN` (например, `example.com`), чтобы гейтвей проверял заголовок `Origin` при работе с Web-версией.

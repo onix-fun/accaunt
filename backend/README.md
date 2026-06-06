@@ -1,46 +1,47 @@
-# Identity Service
+# Identity Service (Бэкенд)
 
-A modern Identity and Authentication service built with Kotlin and Ktor.
+Современный сервис аутентификации и профилей, написанный на Kotlin и Ktor.
 
-## Architecture
+## Архитектура
 
-- **Stateless Access Tokens:** JWT (validation offloaded to Gateway).
-- **Opaque Refresh Tokens:** Stored in PostgreSQL, cached in Redis.
-- **Pure JDBC:** No ORM, SQL stored in `src/main/resources/sql/`.
-- **Event-Driven:** Publishes events (user.created, etc.) to Redis.
-- **Storage:** Avatar uploads to S3/MinIO.
-- **Email Testing:** MailSlurper (catches all outgoing emails locally).
-- **Security:** Password hashing with Argon2id.
+- **Stateless Access Tokens:** Используются JWT (валидация делегирована Gateway).
+- **Opaque Refresh Tokens:** Хранятся в PostgreSQL, кэшируются в Redis.
+- **Чистый JDBC (Exposed):** Использование миграций через Flyway.
+- **Событийно-ориентированная модель:** Публикация событий (например, `user.created`) в Redis.
+- **Хранилище:** Загрузка аватарок в S3-совместимое хранилище (MinIO).
+- **Отправка email:** Локальное тестирование через MailHog (перехватывает все исходящие письма локально).
+- **Безопасность:** Хеширование паролей алгоритмом Argon2id.
 
-## Tech Stack
+## Стек технологий
 
 - **Kotlin 2.x**
 - **Ktor 3.x**
-- **PostgreSQL** (Managed via Flyway)
-- **Redis** (Lettuce client)
+- **PostgreSQL**
+- **Redis**
 - **MinIO / S3**
-- **MailSlurper**
+- **MailHog**
 - **HikariCP**
 
-## API Endpoints
+## API Эндпоинты
 
-### Public
-- `POST /api/auth/register` - Create a new user.
-- `POST /api/auth/login` - Authenticate and get tokens.
-- `GET /health` - Service health check.
+### Публичные API
+- `POST /api/auth/register` — Создание нового пользователя.
+- `POST /api/auth/login` — Аутентификация и получение токенов.
+- `GET /health` — Проверка состояния сервиса.
 
-### UI Consoles (Development)
-- **MinIO Console:** `http://localhost:9001`
-- **MailSlurper UI:** `http://localhost:8085`
+### Консоли (Локальная разработка)
+- **MinIO Console:** `http://localhost:9011` (порт зависит от настроек в `dev/.env`)
+- **MailHog UI:** `http://localhost:8026`
 
-### Protected (Requires Gateway headers)
-- `GET /api/users/me` - Get current user profile.
+### Защищенные API (требуют заголовков от Gateway)
+- `GET /api/users/me` — Получение профиля текущего пользователя.
 
-## Development
+## Разработка
 
-1. Run the application (this will automatically start Docker dependencies):
-   ```bash
-   mvn clean compile exec:java
-   ```
-   *The database schema will be applied automatically via Flyway on startup.*
+Проект интегрирован в монорепозиторий. Для полного запуска окружения (включая зависимости базы данных и кэш) используйте `Makefile` в корне проекта:
 
+```bash
+make up
+```
+
+Схема базы данных автоматически применяется с помощью Flyway при старте сервиса.
