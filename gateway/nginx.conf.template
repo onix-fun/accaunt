@@ -187,8 +187,13 @@ http {
             proxy_pass http://$minio_upstream;
         }
 
+        set $frontend_upstream "frontend:80";
+
         location / {
-            try_files $uri $uri/ /index.html;
+            proxy_pass http://$frontend_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
         }
     }
 }

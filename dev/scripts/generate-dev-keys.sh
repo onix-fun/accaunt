@@ -2,7 +2,7 @@
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-secrets_dir="$script_dir/../secrets/dev"
+secrets_dir="$script_dir/../secrets"
 private_key="$secrets_dir/account-jwt-private.pem"
 public_key="$secrets_dir/account-jwt-public.pem"
 

@@ -1,11 +1,11 @@
 FROM eclipse-temurin:23-jre
 WORKDIR /app
 
-# Include OpenTelemetry Java agent (expected in build/docker/)
-COPY build/docker/opentelemetry-javaagent.jar /otel/opentelemetry-javaagent.jar
+# OpenTelemetry Java agent (if needed, should be downloaded in GH actions or base image)
+# COPY opentelemetry-javaagent.jar /otel/opentelemetry-javaagent.jar
 
-COPY build/docker/profile.jar /app/profile.jar
+COPY target/*.jar /app/app.jar
 
 EXPOSE 8080
 
-CMD ["java", "-jar", "/app/profile.jar"]
+CMD ["java", "-jar", "/app/app.jar"]

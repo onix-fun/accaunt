@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  account-gateway:
+    image: ghcr.io/onix-fun/account/gateway:${TAG:-latest}
+    env_file:
+      - .env
+    environment:
+      IDENTITY_JWT_PUBLIC_KEY_PATH: /run/secrets/account-jwt-public.pem
+      IDENTITY_JWT_ISSUER: account-service
+      IDENTITY_JWT_AUDIENCE: account
+      ACCOUNT_TRUSTED_BASE_DOMAIN: ${DOMAIN:-localhost}
+      ACCOUNT_SWAGGER_UI_ENABLED: "false"
+      ACCOUNT_TRUSTED_PROXY_CIDRS: "127.0.0.1/32"
+    ports:
+      - "${PORT:-8080}:8089"
+    volumes:
+      - ./secrets/account-jwt-public.pem:/run/secrets/account-jwt-public.pem:ro
+    depends_on:
+      - profile
+      - frontend
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/onix-fun/account/frontend:${TAG:-latest}
+    restart: unless-stopped
+    networks:
+      - account-network
+
+  profile:
+    image: ghcr.io/onix-fun/account/backend:${TAG:-latest}
+    env_file:
+      - .env
+    environment:
+      PROFILE_PORT: "8080"
+      IDENTITY_JWT_ISSUER: account-service
+      IDENTITY_JWT_AUDIENCE: account
+      IDENTITY_JWT_PRIVATE_KEY_PATH: /run/secrets/account-jwt-private.pem
+      IDENTITY_JWT_PUBLIC_KEY_PATH: /run/secrets/account-jwt-public.pem
+      IDENTITY_ACCESS_TOKEN_EXP_MINUTES: "15"
+      IDENTITY_REFRESH_TOKEN_EXP_DAYS: "30"
+      IDENTITY_DATABASE_JDBC_URL: ${DB_URL:-jdbc:postgresql://account-postgres:5432/account}
+      IDENTITY_DATABASE_USERNAME: ${DB_USER:-account}
+      IDENTITY_DATABASE_PASSWORD: ${DB_PASSWORD:-account}
+      IDENTITY_REDIS_URL: redis://account-redis:6379
+      IDENTITY_SMTP_HOST: account-mail
+      IDENTITY_SMTP_PORT: "1025"
+    volumes:
+      - ./secrets/account-jwt-private.pem:/run/secrets/account-jwt-private.pem:ro
+      - ./secrets/account-jwt-public.pem:/run/secrets/account-jwt-public.pem:ro
+    depends_on:
+      account-postgres:
+        condition: service_healthy
+      account-redis:
+        condition: service_healthy
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  account-postgres:
+    image: postgres:16
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${DB_NAME:-account}
+      POSTGRES_USER: ${DB_USER:-account}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-account}
+    volumes:
+      - account_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-account} -d ${DB_NAME:-account}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  account-redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - account_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - account-network
+    restart: unless-stopped
+
+  account-mail:
+    image: mailhog/mailhog:latest
+    networks:
+      - account-network
+    restart: unless-stopped
+
+volumes:
+  account_postgres_data:
+  account_redis_data:
+
+networks:
+  account-network:
+    driver: bridge

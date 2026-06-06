@@ -4,7 +4,7 @@ import { i18n } from "@/shared/i18n";
 export const APP_API_BASE_URL = (
   import.meta.env.VITE_APP_API_URL ||
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:8088/api" : "/api")
+  "/api"
 ).replace(/\/$/, "");
 export const PROFILE_BASE_URL = "/api";
 export const DOMAIN_BASE_URL = `${APP_API_BASE_URL}/domain`;
