@@ -35,6 +35,7 @@ export function useAuthFlow() {
   const publicVerificationCode = ref("");
   const accountLookup = ref<AccountLookupResponse | null>(null);
   const isLookupLoading = ref(false);
+  const lookupPurpose = ref<"login" | "forgot">("login");
   const forgotIdentifier = ref("");
   const resetIdentifier = ref("");
   const resetCode = ref("");
@@ -60,13 +61,18 @@ export function useAuthFlow() {
   });
   const registerPasswordValid = computed(() => isPassword(registerForm.value.password));
   const registerPasswordsMatch = computed(() => Boolean(registerForm.value.confirmPassword) && !registerPasswordMismatch.value);
-  const identifierError = computed(() => {
-    const value = loginIdentifier.value.trim();
+  const accountDisplayName = computed(() => {
+    return accountLookup.value?.username || registerForm.value.username || loginIdentifier.value.trim();
+  });
+  const validateIdentifier = (rawValue: string) => {
+    const value = rawValue.trim();
     if (!value) return t("errors.VALIDATION_REQUIRED_FIELD");
     if (value.includes("@") && !isEmail(value)) return t("errors.VALIDATION_INVALID_EMAIL");
     if (!value.includes("@") && !isUsername(value)) return t("errors.VALIDATION_USERNAME_TOO_SHORT");
     return "";
-  });
+  };
+  const identifierError = computed(() => validateIdentifier(loginIdentifier.value));
+  const forgotIdentifierError = computed(() => validateIdentifier(forgotIdentifier.value));
   const registrationErrors = computed(() => ({
     username: isUsername(registerForm.value.username) ? "" : t("errors.VALIDATION_USERNAME_TOO_SHORT"),
     email: isEmail(registerForm.value.email) ? "" : t("errors.VALIDATION_INVALID_EMAIL"),
@@ -126,35 +132,65 @@ export function useAuthFlow() {
     authMessage.value = "";
     fieldErrors.value = {};
     accountLookup.value = null;
+    lookupPurpose.value = "login";
     mode.value = "identifier";
+  };
+
+  const showForgotStep = () => {
+    authMessage.value = "";
+    fieldErrors.value = {};
+    forgotIdentifier.value = loginIdentifier.value.trim();
+    lookupPurpose.value = "forgot";
+    mode.value = "forgot";
+  };
+
+  const openRegistrationForIdentifier = (identifier: string) => {
+    const normalized = identifier.trim();
+    registerForm.value.email = normalized.includes("@") ? normalized : "";
+    registerForm.value.username = normalized.includes("@") ? "" : normalized;
+    mode.value = "register";
+  };
+
+  const startPasswordReset = async (identifier: string) => {
+    await authStore.forgotPassword(identifier);
+    resetIdentifier.value = identifier.trim();
+    resetCode.value = "";
+    resetPassword.value = "";
+    authMessage.value = t("auth.resetSent");
+    mode.value = "reset";
+  };
+
+  const handleUnavailableAccount = async (identifier: string, lookup: AccountLookupResponse) => {
+    if (lookup.state === "NOT_FOUND") {
+      openRegistrationForIdentifier(identifier);
+    } else if (lookup.state === "PENDING_REGISTRATION") {
+      pendingRegistrationEmail.value = identifier;
+      await AuthService.resendRegistrationCode(identifier);
+      mode.value = "confirm";
+      authMessage.value = t("auth.verificationResent");
+    } else if (lookup.state === "EMAIL_UNVERIFIED") {
+      await AuthService.requestPublicVerification(identifier);
+      publicVerificationCode.value = "";
+      mode.value = "verify";
+      authMessage.value = t("auth.verificationSent");
+    } else {
+      authMessage.value = t("errors.AUTH_ACCOUNT_BLOCKED");
+    }
   };
 
   const continueToPassword = async () => {
     authMessage.value = "";
     fieldErrors.value = {};
     if (identifierError.value) return;
+    lookupPurpose.value = "login";
     isLookupLoading.value = true;
     try {
       accountLookup.value = await AuthService.lookupAccount(loginIdentifier.value);
       const lookup = accountLookup.value;
       if (lookup.state === "ACTIVE") {
         mode.value = "password";
-      } else if (lookup.state === "NOT_FOUND") {
-        registerForm.value.email = loginIdentifier.value.includes("@") ? loginIdentifier.value.trim() : "";
-        registerForm.value.username = loginIdentifier.value.includes("@") ? "" : loginIdentifier.value.trim();
-        mode.value = "register";
-      } else if (lookup.state === "PENDING_REGISTRATION") {
-        pendingRegistrationEmail.value = lookup.email || loginIdentifier.value;
-        await AuthService.resendRegistrationCode(loginIdentifier.value);
-        mode.value = "confirm";
-        authMessage.value = t("auth.verificationResent");
-      } else if (lookup.state === "EMAIL_UNVERIFIED") {
-        await AuthService.requestPublicVerification(loginIdentifier.value);
-        publicVerificationCode.value = "";
-        mode.value = "verify";
-        authMessage.value = t("auth.verificationSent");
       } else {
-        authMessage.value = t("errors.AUTH_ACCOUNT_BLOCKED");
+        await handleUnavailableAccount(loginIdentifier.value, lookup);
       }
     } catch (cause) {
       captureError(cause);
@@ -200,8 +236,12 @@ export function useAuthFlow() {
     try {
       await AuthService.confirmPublicVerification(loginIdentifier.value, publicVerificationCode.value);
       accountLookup.value = await AuthService.lookupAccount(loginIdentifier.value);
-      mode.value = "password";
-      authMessage.value = t("auth.emailConfirmed");
+      if (lookupPurpose.value === "forgot") {
+        await startPasswordReset(loginIdentifier.value);
+      } else {
+        mode.value = "password";
+        authMessage.value = t("auth.emailConfirmed");
+      }
     } catch (cause) {
       captureError(cause);
     }
@@ -249,15 +289,23 @@ export function useAuthFlow() {
 
   const forgotPassword = async () => {
     authMessage.value = "";
+    fieldErrors.value = {};
+    if (forgotIdentifierError.value) return;
+    isLookupLoading.value = true;
+    lookupPurpose.value = "forgot";
     try {
-      await authStore.forgotPassword(forgotIdentifier.value);
-      resetIdentifier.value = forgotIdentifier.value;
-      resetCode.value = "";
-      resetPassword.value = "";
-      authMessage.value = t("auth.resetSent");
-      mode.value = "reset";
-    } catch {
-      authMessage.value = authStore.error || t("auth.resetFailed");
+      accountLookup.value = await AuthService.lookupAccount(forgotIdentifier.value);
+      const lookup = accountLookup.value;
+      loginIdentifier.value = forgotIdentifier.value.trim();
+      if (lookup.state === "ACTIVE") {
+        await startPasswordReset(forgotIdentifier.value);
+      } else {
+        await handleUnavailableAccount(forgotIdentifier.value, lookup);
+      }
+    } catch (cause) {
+      captureError(cause);
+    } finally {
+      isLookupLoading.value = false;
     }
   };
 
@@ -288,6 +336,7 @@ export function useAuthFlow() {
   return {
     activeStep,
     accountLookup,
+    accountDisplayName,
     authMessage,
     canRegister,
     completeNameStep,
@@ -295,6 +344,7 @@ export function useAuthFlow() {
     confirmPublicVerification,
     continueToPassword,
     forgotIdentifier,
+    forgotIdentifierError,
     forgotPassword,
     fieldErrors,
     isCheckingUsername,
@@ -319,6 +369,7 @@ export function useAuthFlow() {
     resetIdentifier,
     resetPassword,
     showIdentifierStep,
+    showForgotStep,
     showRegistrationSteps,
     submitResetPassword,
     title,

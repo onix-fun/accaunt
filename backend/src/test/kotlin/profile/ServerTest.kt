@@ -134,6 +134,8 @@ class ServerTest {
         val activeLookup = client.get("/api/auth/account-lookup?identifier=test@example.com")
         assertEquals(HttpStatusCode.OK, activeLookup.status)
         assertTrue(activeLookup.bodyAsText().contains("\"state\":\"ACTIVE\""))
+        assertTrue(activeLookup.bodyAsText().contains("\"username\":\"testuser\""))
+        assertFalse(activeLookup.bodyAsText().contains("\"email\""))
 
         userRepository.updateEmailVerified(userId, false)
         val unverifiedLookup = client.get("/api/auth/account-lookup?identifier=testuser")

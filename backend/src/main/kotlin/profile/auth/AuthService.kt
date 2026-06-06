@@ -312,7 +312,7 @@ class AuthService(
         if (normalized.isBlank()) apiError(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "identifier")
         val pending = pendingRegistrationStore.findByIdentifier(normalized)
         if (pending != null) {
-            return AccountLookupResponse("PENDING_REGISTRATION", normalized, pending.email, pending.username)
+            return AccountLookupResponse("PENDING_REGISTRATION", normalized, pending.username)
         }
         val user = findUserByIdentifier(normalized)
             ?: return AccountLookupResponse("NOT_FOUND", normalized)
@@ -321,7 +321,7 @@ class AuthService(
             !user.emailVerified -> "EMAIL_UNVERIFIED"
             else -> "ACTIVE"
         }
-        return AccountLookupResponse(state, normalized, user.email, user.username, user.avatarUrl)
+        return AccountLookupResponse(state, normalized, user.username, user.avatarUrl)
     }
 
     fun requestPublicEmailVerification(identifier: String) {

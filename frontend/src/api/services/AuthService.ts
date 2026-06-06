@@ -29,7 +29,6 @@ export type AccountLookupState = "ACTIVE" | "NOT_FOUND" | "PENDING_REGISTRATION"
 export interface AccountLookupResponse {
   state: AccountLookupState;
   identifier: string;
-  email?: string | null;
   username?: string | null;
   avatarUrl?: string | null;
 }

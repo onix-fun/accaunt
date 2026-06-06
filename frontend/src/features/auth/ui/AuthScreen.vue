@@ -65,7 +65,7 @@ const steps = [
             {{ t("common.continue") }}
           </button>
         </div>
-        <button class="link-button subtle-link" type="button" @click="flow.mode.value = 'forgot'">
+        <button class="link-button subtle-link" type="button" @click="flow.showForgotStep">
           {{ t("auth.forgotPassword") }}
         </button>
       </form>
@@ -74,7 +74,7 @@ const steps = [
         <div class="account-chip">
           <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
           <i v-else class="pi pi-user"></i>
-          <span>{{ flow.loginIdentifier.value }}</span>
+          <span>{{ flow.accountDisplayName.value }}</span>
         </div>
         <label class="field">
           <span>{{ t("auth.password") }}</span>
@@ -91,7 +91,7 @@ const steps = [
           </span>
         </label>
         <div class="auth-actions split">
-          <button class="link-button" type="button" @click="flow.mode.value = 'forgot'">
+          <button class="link-button" type="button" @click="flow.showForgotStep">
             {{ t("auth.forgotPassword") }}
           </button>
           <button class="btn btn-primary" type="submit" :disabled="authStore.isLoading">
@@ -209,7 +209,7 @@ const steps = [
         <div class="account-chip">
           <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
           <i v-else class="pi pi-envelope"></i>
-          <span>{{ flow.accountLookup.value?.email || flow.loginIdentifier.value }}</span>
+          <span>{{ flow.accountDisplayName.value }}</span>
         </div>
         <label class="field">
           <span>{{ t("auth.verificationCode") }}</span>
@@ -232,7 +232,7 @@ const steps = [
       <form v-else-if="flow.mode.value === 'confirm'" class="account-form" @submit.prevent="flow.confirmRegistration">
         <div class="account-chip">
           <i class="pi pi-envelope"></i>
-          <span>{{ flow.pendingRegistrationEmail.value }}</span>
+          <span>{{ flow.accountDisplayName.value }}</span>
         </div>
         <label class="field">
           <span>{{ t("auth.verificationCode") }}</span>
@@ -263,7 +263,7 @@ const steps = [
       <form v-else-if="flow.mode.value === 'name'" class="account-form" @submit.prevent="flow.completeNameStep">
         <div class="account-chip">
           <i class="pi pi-check-circle"></i>
-          <span>{{ authStore.currentUser?.email }}</span>
+          <span>{{ authStore.currentUser?.username }}</span>
         </div>
         <label class="field">
           <span>{{ t("auth.firstName") }}</span>
@@ -282,16 +282,27 @@ const steps = [
         <label class="field">
           <span>{{ t("auth.emailOrUsername") }}</span>
           <input v-model="flow.forgotIdentifier.value" class="input xl" autocomplete="username" required autofocus />
+          <span v-if="flow.forgotIdentifier.value && flow.forgotIdentifierError.value" class="validation-message text-danger">
+            {{ flow.forgotIdentifierError.value }}
+          </span>
+          <span v-else-if="flow.fieldErrors.value.identifier" class="validation-message text-danger">
+            {{ flow.fieldErrors.value.identifier }}
+          </span>
         </label>
-        <button class="btn btn-primary full" type="submit" :disabled="authStore.isLoading">
+        <button
+          class="btn btn-primary full"
+          type="submit"
+          :disabled="authStore.isLoading || flow.isLookupLoading.value || Boolean(flow.forgotIdentifierError.value)"
+        >
           {{ t("auth.sendCode") }}
         </button>
       </form>
 
       <form v-else class="account-form" @submit.prevent="flow.submitResetPassword">
         <div class="account-chip">
-          <i class="pi pi-user"></i>
-          <span>{{ flow.resetIdentifier.value }}</span>
+          <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
+          <i v-else class="pi pi-user"></i>
+          <span>{{ flow.accountDisplayName.value }}</span>
         </div>
         <label class="field">
           <span>{{ t("auth.verificationCode") }}</span>
