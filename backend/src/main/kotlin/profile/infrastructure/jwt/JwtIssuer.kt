@@ -14,13 +14,16 @@ class JwtIssuer(config: ApplicationConfig) {
         RsaKeyLoader.loadPrivateKey(config.property("identity.jwt.private_key_path").getString())
     )
 
-    fun createToken(userId: String, sessionId: String, role: String): String {
+    fun createToken(userId: String, sessionId: String): String {
+        val now = Date()
         return JWT.create()
             .withAudience(audience)
             .withIssuer(issuer)
             .withSubject(userId)
+            .withJWTId(UUID.randomUUID().toString())
+            .withIssuedAt(now)
+            .withNotBefore(now)
             .withClaim("sid", sessionId)
-            .withClaim("role", role)
             .withExpiresAt(Date(System.currentTimeMillis() + validityInMinutes * 60 * 1000))
             .sign(algorithm)
     }

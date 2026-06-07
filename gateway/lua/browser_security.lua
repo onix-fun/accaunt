@@ -95,7 +95,11 @@ function _M.enforce_csrf()
     end
 
     local uri = ngx.var.uri
-    if uri == "/api/auth/token" or uri == "/api/auth/token/refresh" then
+    local is_token_endpoint = uri == "/api/auth/token" or uri == "/api/auth/token/refresh"
+    if is_token_endpoint then
+        if not _M.is_allowed_origin(ngx.var.http_origin) then
+            return forbidden("SECURITY_ORIGIN_INVALID", 5101, "Trusted Origin header is required")
+        end
         return true
     end
 
@@ -104,7 +108,7 @@ function _M.enforce_csrf()
     end
 
     local header_token = ngx.var.http_x_csrf_token
-    local cookie_token = cookie_value("csrf_token")
+    local cookie_token = cookie_value("__Host-csrf_token") or cookie_value("csrf_token")
     if not constant_time_equals(header_token, cookie_token) then
         return forbidden("SECURITY_CSRF_INVALID", 5100, "Valid CSRF token is required")
     end

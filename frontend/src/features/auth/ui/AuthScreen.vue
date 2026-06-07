@@ -4,6 +4,7 @@ import { useAuthStore } from "@/infra/store";
 import { useAuthFlow } from "@/features/auth/model/useAuthFlow";
 import LocaleSwitcher from "@/shared/ui/LocaleSwitcher.vue";
 import VerificationCodeInput from "@/shared/ui/VerificationCodeInput.vue";
+import PasswordInput from "@/shared/ui/PasswordInput.vue";
 
 const authStore = useAuthStore();
 const { t } = useI18n();
@@ -72,16 +73,15 @@ const steps = [
 
       <form v-else-if="flow.mode.value === 'password'" class="account-form" @submit.prevent="flow.login">
         <div class="account-chip">
-          <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
+          <img v-if="flow.accountAvatarUrl.value" class="account-chip-avatar" :src="flow.accountAvatarUrl.value" alt="" />
           <i v-else class="pi pi-user"></i>
           <span>{{ flow.accountDisplayName.value }}</span>
         </div>
         <label class="field">
           <span>{{ t("auth.password") }}</span>
-          <input
+          <PasswordInput
             v-model="flow.loginPassword.value"
             class="input xl"
-            type="password"
             autocomplete="current-password"
             required
             autofocus
@@ -152,10 +152,9 @@ const steps = [
         </label>
         <label class="field">
           <span>{{ t("auth.password") }}</span>
-          <input
+          <PasswordInput
             v-model="flow.registerForm.value.password"
             class="input xl"
-            type="password"
             autocomplete="new-password"
             required
             minlength="8"
@@ -166,10 +165,9 @@ const steps = [
         </label>
         <label class="field">
           <span>{{ t("auth.confirmPassword") }}</span>
-          <input
+          <PasswordInput
             v-model="flow.registerForm.value.confirmPassword"
             class="input xl"
-            type="password"
             autocomplete="new-password"
             required
             minlength="8"
@@ -207,7 +205,7 @@ const steps = [
 
       <form v-else-if="flow.mode.value === 'verify'" class="account-form" @submit.prevent="flow.confirmPublicVerification">
         <div class="account-chip">
-          <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
+          <img v-if="flow.accountAvatarUrl.value" class="account-chip-avatar" :src="flow.accountAvatarUrl.value" alt="" />
           <i v-else class="pi pi-envelope"></i>
           <span>{{ flow.accountDisplayName.value }}</span>
         </div>
@@ -262,7 +260,8 @@ const steps = [
 
       <form v-else-if="flow.mode.value === 'name'" class="account-form" @submit.prevent="flow.completeNameStep">
         <div class="account-chip">
-          <i class="pi pi-check-circle"></i>
+          <img v-if="flow.accountAvatarUrl.value" class="account-chip-avatar" :src="flow.accountAvatarUrl.value" alt="" />
+          <i v-else class="pi pi-check-circle"></i>
           <span>{{ authStore.currentUser?.username }}</span>
         </div>
         <label class="field">
@@ -300,7 +299,7 @@ const steps = [
 
       <form v-else class="account-form" @submit.prevent="flow.submitResetPassword">
         <div class="account-chip">
-          <img v-if="flow.accountLookup.value?.avatarUrl" class="account-chip-avatar" :src="flow.accountLookup.value.avatarUrl" alt="" />
+          <img v-if="flow.accountAvatarUrl.value" class="account-chip-avatar" :src="flow.accountAvatarUrl.value" alt="" />
           <i v-else class="pi pi-user"></i>
           <span>{{ flow.accountDisplayName.value }}</span>
         </div>
@@ -318,10 +317,9 @@ const steps = [
         </label>
         <label class="field">
           <span>{{ t("auth.newPassword") }}</span>
-          <input
+          <PasswordInput
             v-model="flow.resetPassword.value"
             class="input xl"
-            type="password"
             autocomplete="new-password"
             required
             minlength="8"

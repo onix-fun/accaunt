@@ -19,7 +19,7 @@ local function access_token()
         end
     end
 
-    return security.cookie_value("access_token")
+    return security.cookie_value("__Host-access_token") or security.cookie_value("access_token")
 end
 
 if ngx.req.get_method() == "OPTIONS" then
@@ -63,6 +63,10 @@ end
 local expires_at = tonumber(payload.exp)
 if not expires_at or expires_at <= ngx.time() then
     return unauthorized("Expired bearer token")
+end
+local not_before = tonumber(payload.nbf)
+if not_before and not_before > ngx.time() then
+    return unauthorized("Token is not yet valid")
 end
 if not payload.sub or payload.sub == "" then
     return unauthorized("Token subject is required")

@@ -2,7 +2,7 @@ package.path = (os.getenv("PWD") or ".") .. "/lua/?.lua;" .. package.path
 
 local verified_token = nil
 package.preload["session_status"] = function()
-    return { require_active = function(session_id, user_id) return session_id == "session-id" and user_id == "client-id" end }
+    return { require_active = function(session_id, user_id) return session_id == "019e9f10-3ef0-7aea-899c-0bc6bdaec652" and user_id == "client-id" end }
 end
 package.preload["rs256_token"] = function()
     return {
@@ -13,7 +13,7 @@ package.preload["rs256_token"] = function()
                 aud = "account",
                 exp = 200,
                 sub = "client-id"
-                ,sid = "session-id"
+                ,sid = "019e9f10-3ef0-7aea-899c-0bc6bdaec652"
             }
             if token == "bad-issuer" then payload.iss = "other" end
             if token == "bad-audience" then payload.aud = "other" end
@@ -51,7 +51,7 @@ local function reset()
 end
 
 reset()
-ngx.var.http_cookie = "access_token=cookie-token"
+ngx.var.http_cookie = "__Host-access_token=cookie-token"
 dofile(jwt_auth_path)
 assert(last_exit == nil)
 assert(verified_token == "cookie-token")
@@ -60,7 +60,7 @@ assert(ngx.var.auth_expires_at == "200")
 
 reset()
 ngx.var.http_authorization = "Bearer bearer-token"
-ngx.var.http_cookie = "access_token=cookie-token"
+ngx.var.http_cookie = "__Host-access_token=cookie-token"
 dofile(jwt_auth_path)
 assert(last_exit == nil)
 assert(verified_token == "bearer-token")

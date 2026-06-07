@@ -61,10 +61,10 @@ class RedisManager(config: ApplicationConfig) {
         val key = "profile:account-failures:$userId"
         if (redis != null) {
             val count = redis.incr(key)
-            if (count == 1L) redis.expire(key, 300)
+            if (count == 1L) redis.expire(key, 900)
             return count
         }
-        val windowKey = "profile:account-failures:$userId:${System.currentTimeMillis() / 300_000}"
+        val windowKey = "profile:account-failures:$userId:${System.currentTimeMillis() / 900_000}"
         return memoryRateLimit.merge(windowKey, 1L) { old, _ -> old + 1 } ?: 1L
     }
 

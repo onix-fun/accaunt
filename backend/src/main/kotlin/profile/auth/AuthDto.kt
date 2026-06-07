@@ -55,7 +55,6 @@ data class UsernameAvailabilityResponse(
 data class AccountLookupResponse(
     val state: String,
     val identifier: String,
-    val username: String? = null,
     val avatarUrl: String? = null
 )
 

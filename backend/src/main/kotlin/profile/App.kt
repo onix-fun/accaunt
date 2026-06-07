@@ -17,6 +17,7 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.requestvalidation.*
 import io.ktor.server.plugins.statuspages.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.launch
@@ -53,6 +54,7 @@ import profile.shared.ApiFieldError
 import profile.users.UserController
 import profile.users.RequestEmailChangeRequest
 import profile.users.ConfirmEmailChangeRequest
+import profile.users.UpdateProfileRequest
 import profile.infrastructure.db.SessionRepository
 import profile.infrastructure.config.SecurityConfig
 import profile.infrastructure.ratelimit.RateLimit
@@ -95,7 +97,7 @@ fun Application.module() {
                 request.email.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "email")
                 !request.email.contains("@") -> invalid(ApiErrorCode.VALIDATION_INVALID_EMAIL, "email")
                 request.username.isBlank() -> invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "username")
-                request.username.length < 3 -> invalid(ApiErrorCode.VALIDATION_USERNAME_TOO_SHORT, "username")
+                request.username.trim().length < 3 -> invalid(ApiErrorCode.VALIDATION_USERNAME_TOO_SHORT, "username")
                 request.password.length < 8 -> invalid(ApiErrorCode.VALIDATION_PASSWORD_TOO_SHORT, "password")
                 else -> ValidationResult.Valid
             }
@@ -174,6 +176,15 @@ fun Application.module() {
         validate<ConfirmEmailChangeRequest> { request ->
             if (!request.code.matches(Regex("\\d{6}"))) invalid(ApiErrorCode.VALIDATION_INVALID_CODE, "code") else ValidationResult.Valid
         }
+        validate<UpdateProfileRequest> { request ->
+            when {
+                request.username != null && request.username.isBlank() ->
+                    invalid(ApiErrorCode.VALIDATION_REQUIRED_FIELD, "username")
+                request.username != null && request.username.trim().length < 3 ->
+                    invalid(ApiErrorCode.VALIDATION_USERNAME_TOO_SHORT, "username")
+                else -> ValidationResult.Valid
+            }
+        }
     }
 
     install(RateLimit) {
@@ -193,6 +204,26 @@ fun Application.module() {
         route("/api/auth/switch", max = 30, windowSeconds = 60)
         route("/api/auth/logout", max = 30, windowSeconds = 60)
         route("/api/users/me/avatar", max = 20, windowSeconds = 60)
+    }
+
+    // CSRF validation (defense-in-depth — gateway also validates)
+    intercept(ApplicationCallPipeline.Call) {
+        val method = call.request.httpMethod
+        if (method in setOf(HttpMethod.Post, HttpMethod.Put, HttpMethod.Patch, HttpMethod.Delete)) {
+            val path = call.request.path()
+            val isAuthTokenPath = path == "/api/auth/token" || path == "/api/auth/token/refresh" || path == "/api/auth/csrf"
+            val hasBearer = call.request.headers[HttpHeaders.Authorization]?.startsWith("Bearer ", ignoreCase = true) == true
+            if (!isAuthTokenPath && !hasBearer) {
+                val headerToken = call.request.headers["X-CSRF-Token"] ?: ""
+                val cookieToken = call.request.cookies["__Host-csrf_token"]
+                    ?: call.request.cookies["csrf_token"]
+                    ?: ""
+                if (headerToken.isBlank() || cookieToken.isBlank() || !java.security.MessageDigest.isEqual(headerToken.toByteArray(), cookieToken.toByteArray())) {
+                    call.respondApiError(ApiErrorCode.SECURITY_CSRF_INVALID)
+                    return@intercept
+                }
+            }
+        }
     }
 
     val redisManager by inject<RedisManager>()
@@ -234,7 +265,8 @@ fun Application.module() {
         jwt {
             authHeader { call ->
                 call.request.parseAuthorizationHeader()
-                    ?: call.request.cookies["access_token"]?.let { HttpAuthHeader.Single("Bearer", it) }
+                    ?: (call.request.cookies["__Host-access_token"] ?: call.request.cookies["access_token"])
+                        ?.let { HttpAuthHeader.Single("Bearer", it) }
             }
             verifier(
                 JWT.require(Algorithm.RSA256(jwtPublicKey, null))

@@ -6,6 +6,10 @@ ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/release
 
 COPY target/*-with-dependencies.jar /app/app.jar
 
+RUN useradd -M -u 1001 appuser && mkdir -p /var/log/account/profile && chown -R appuser:appuser /app /otel /var/log/account
+
+USER appuser
+
 EXPOSE 8080
 
 CMD ["java", "-jar", "/app/app.jar"]

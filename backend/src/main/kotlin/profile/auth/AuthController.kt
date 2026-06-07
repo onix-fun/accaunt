@@ -7,6 +7,7 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import profile.infrastructure.config.JwtConfig
+import profile.infrastructure.events.EmailLocale
 import profile.shared.ApiErrorCode
 import profile.shared.apiError
 import profile.users.toProfileDto
@@ -28,7 +29,8 @@ class AuthController(
             request.username,
             request.password,
             request.firstName,
-            request.lastName
+            request.lastName,
+            call.emailLocale()
         )
         call.respond(HttpStatusCode.Accepted, response)
     }
@@ -45,7 +47,7 @@ class AuthController(
 
     suspend fun resendRegistrationCode(call: ApplicationCall) {
         val request = call.receive<ResendRegistrationCodeRequest>()
-        val response = authService.resendRegistrationCode(request.identifier ?: request.email.orEmpty())
+        val response = authService.resendRegistrationCode(request.identifier ?: request.email.orEmpty(), call.emailLocale())
         call.respond(HttpStatusCode.OK, response)
     }
 
@@ -101,7 +103,7 @@ class AuthController(
 
     suspend fun requestPublicVerification(call: ApplicationCall) {
         val request = call.receive<PublicVerificationRequest>()
-        authService.requestPublicEmailVerification(request.identifier)
+        authService.requestPublicEmailVerification(request.identifier, call.emailLocale())
         call.respond(HttpStatusCode.OK)
     }
 
@@ -140,13 +142,13 @@ class AuthController(
 
     suspend fun resendVerification(call: ApplicationCall) {
         val userId = call.principal<JWTPrincipal>()!!.payload.subject
-        authService.requestEmailVerification(userId)
+        authService.requestEmailVerification(userId, call.emailLocale())
         call.respond(HttpStatusCode.OK, mapOf("message" to "Verification code resent"))
     }
 
     suspend fun forgotPassword(call: ApplicationCall) {
         val request = call.receive<ForgotPasswordRequest>()
-        authService.forgotPassword(request.identifier ?: request.email.orEmpty())
+        authService.forgotPassword(request.identifier ?: request.email.orEmpty(), call.emailLocale())
         call.respond(HttpStatusCode.OK, mapOf("message" to "If the account exists, a reset code has been sent"))
     }
 
@@ -155,7 +157,8 @@ class AuthController(
         authService.resetPassword(
             request.identifier ?: request.email.orEmpty(),
             request.code ?: request.token.orEmpty(),
-            request.newPassword
+            request.newPassword,
+            call.emailLocale()
         )
         call.respond(HttpStatusCode.OK, mapOf("message" to "Password has been reset successfully"))
     }
@@ -163,7 +166,7 @@ class AuthController(
     suspend fun changePassword(call: ApplicationCall) {
         val userId = call.principal<JWTPrincipal>()!!.payload.subject
         val request = call.receive<ChangePasswordRequest>()
-        authService.changePassword(userId, request.currentPassword, request.newPassword)
+        authService.changePassword(userId, request.currentPassword, request.newPassword, call.emailLocale())
 
         requestRefreshTokens(call)
             .keys
@@ -201,7 +204,7 @@ class AuthController(
     }
 
     suspend fun logout(call: ApplicationCall) {
-        val userId = call.request.cookies[ACTIVE_USER_COOKIE_NAME]?.let(::parseUserId)
+        val userId = activeUserId(call)
         val refreshToken = userId?.let { call.request.cookies[getRefreshCookieName(it)] }
         if (refreshToken != null) {
             authService.logout(refreshToken)
@@ -260,7 +263,7 @@ class AuthController(
     private fun resolveBrowserAccount(call: ApplicationCall): Pair<String, String>? {
         val refreshTokens = requestRefreshTokens(call)
         val preferredIds = listOfNotNull(
-            call.request.cookies[ACTIVE_USER_COOKIE_NAME]?.let(::parseUserId)
+            activeUserId(call)
         )
 
         preferredIds.forEach { userId ->
@@ -315,24 +318,24 @@ class AuthController(
     }
 
     private fun accessCookie(value: String) = browserCookie(
-        name = ACCESS_COOKIE_NAME,
+        name = browserCookieName(ACCESS_COOKIE_NAME),
         value = value,
         maxAge = accessCookieMaxAgeSeconds(),
         sameSite = "Strict"
     )
 
-    private fun clearAccessCookie() = browserCookie(name = ACCESS_COOKIE_NAME, value = "", maxAge = 0, sameSite = "Strict")
+    private fun clearAccessCookie() = browserCookie(name = browserCookieName(ACCESS_COOKIE_NAME), value = "", maxAge = 0, sameSite = "Strict")
 
     private fun activeUserCookie(userId: String) = browserCookie(
-        name = ACTIVE_USER_COOKIE_NAME,
+        name = browserCookieName(ACTIVE_USER_COOKIE_NAME),
         value = userId,
         maxAge = refreshCookieMaxAgeSeconds()
     )
 
-    private fun clearActiveUserCookie() = browserCookie(name = ACTIVE_USER_COOKIE_NAME, value = "", maxAge = 0)
+    private fun clearActiveUserCookie() = browserCookie(name = browserCookieName(ACTIVE_USER_COOKIE_NAME), value = "", maxAge = 0)
 
     private fun csrfCookie(value: String) = browserCookie(
-        name = CSRF_COOKIE_NAME,
+        name = browserCookieName(CSRF_COOKIE_NAME),
         value = value,
         maxAge = refreshCookieMaxAgeSeconds(),
         sameSite = "Strict"
@@ -344,11 +347,21 @@ class AuthController(
             value = value,
             httpOnly = true,
             secure = sessionConfig.cookieSecure,
-            domain = sessionConfig.cookieDomain,
+            domain = if (name.startsWith("__Host-")) null else sessionConfig.cookieDomain,
             path = "/",
             maxAge = maxAge,
             extensions = mapOf("SameSite" to sameSite)
         )
+    }
+
+    private fun browserCookieName(name: String): String {
+        return if (sessionConfig.cookieSecure) "__Host-$name" else name
+    }
+
+    private fun activeUserId(call: ApplicationCall): String? {
+        return (call.request.cookies["__Host-$ACTIVE_USER_COOKIE_NAME"]
+            ?: call.request.cookies[ACTIVE_USER_COOKIE_NAME])
+            ?.let(::parseUserId)
     }
 
     private fun refreshCookieMaxAgeSeconds(): Int {
@@ -388,6 +401,9 @@ class AuthController(
         return request.headers["X-Real-IP"]
             ?: request.local.remoteHost
     }
+
+    private fun ApplicationCall.emailLocale(): EmailLocale =
+        EmailLocale.fromHeader(request.headers[HttpHeaders.AcceptLanguage])
 
     private companion object {
         private const val REFRESH_COOKIE_PREFIX = "refresh_token_"
