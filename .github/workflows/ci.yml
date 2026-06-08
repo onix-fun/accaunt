@@ -48,8 +48,23 @@ jobs:
           ACCOUNT_GATEWAY_IMAGE: ghcr.io/example/gateway:test
           ACCOUNT_FRONTEND_IMAGE: ghcr.io/example/frontend:test
           ACCOUNT_BACKEND_IMAGE: ghcr.io/example/backend:test
-          CLICKHOUSE_PASSWORD: test-clickhouse-password
-          GRAFANA_ADMIN_PASSWORD: test-grafana-password
+          SIGNOZ_TOKENIZER_JWT_SECRET: test-signoz-tokenizer-secret-at-least-32-characters
+      - run: touch dev/.env && docker compose -f dev/docker-compose.yml config --quiet
+      - run: |
+          jq empty observability/signoz/dashboards/*.json
+          sh -n observability/signoz/import-dashboards.sh
+          sh -n observability/signoz/smoke-test.sh
+
+  observability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: touch dev/.env
+      - run: docker compose -f dev/docker-compose.yml up -d account-otel-collector signoz
+      - run: ./observability/signoz/smoke-test.sh
+      - if: always()
+        run: docker compose -f dev/docker-compose.yml down -v
 
   security:
     runs-on: ubuntu-latest

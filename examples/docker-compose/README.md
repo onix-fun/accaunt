@@ -1,12 +1,14 @@
-# Docker Compose — локальный тестовый запуск
+# Docker Compose — production reference
 
-Собирает все сервисы из исходников и запускает полный стек.
+Запускает immutable application images и полный self-hosted SigNoz stack.
+Локальная сборка образов в этом примере отсутствует.
 
 ## Быстрый старт
 
 ```sh
 ./generate-keys.sh
-docker compose up --build
+cp .env.example .env
+docker compose up -d
 ```
 
 | Сервис | URL |
@@ -16,6 +18,7 @@ docker compose up --build
 | Swagger UI | `http://localhost:8089/swagger-ui` |
 | MailHog (email) | `http://localhost:8026` |
 | MinIO Console | `http://localhost:9011` |
+| SigNoz | `http://localhost:3301` |
 
 ## Переменные окружения
 
@@ -25,11 +28,17 @@ docker compose up --build
 cp .env.example .env
 ```
 
+После создания первого администратора SigNoz импортируйте dashboards:
+
+```sh
+SIGNOZ_API_KEY=replace-me ../../observability/signoz/import-dashboards.sh
+```
+
 ## Остановка
 
 ```sh
 docker compose down        # остановить контейнеры
-docker compose down -v     # остановить и удалить volumes (БД, Redis, MinIO)
+docker compose down -v     # удалить application и SigNoz volumes
 ```
 
 ## Production

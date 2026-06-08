@@ -37,6 +37,7 @@ receivers:
     username: ${env:POSTGRES_USER}
     password: ${env:POSTGRES_PASSWORD}
     databases: [account]
+    collection_interval: 30s
     tls:
       insecure: true
   nginx:
@@ -45,6 +46,10 @@ receivers:
   prometheus:
     config:
       scrape_configs:
+        - job_name: account-edge-otel-collector
+          scrape_interval: 30s
+          static_configs:
+            - targets: [localhost:8888]
         - job_name: minio
           scrape_interval: 30s
           metrics_path: /minio/v2/metrics/cluster
@@ -54,7 +59,12 @@ receivers:
           scrape_interval: 30s
           metrics_path: /metrics
           static_configs:
-            - targets: [account-clickhouse:9363]
+            - targets: [clickhouse:9363]
+        - job_name: zookeeper
+          scrape_interval: 30s
+          metrics_path: /metrics
+          static_configs:
+            - targets: [zookeeper-1:9141]
 
 processors:
   memory_limiter:
@@ -81,55 +91,54 @@ processors:
       - name: baseline
         type: probabilistic
         probabilistic: {sampling_percentage: 10}
+  batch:
+    send_batch_size: 4096
+    timeout: 5s
 
 exporters:
-  clickhouse/logs:
-    endpoint: tcp://account-clickhouse:9000
-    database: otel
-    username: ${env:CLICKHOUSE_USER}
-    password: ${env:CLICKHOUSE_PASSWORD}
-    ttl: 720h
-    create_schema: true
-    async_insert: true
-    sending_queue: {enabled: true, queue_size: 2000, num_consumers: 4}
-    retry_on_failure: {enabled: true, max_elapsed_time: 300s}
-  clickhouse/traces:
-    endpoint: tcp://account-clickhouse:9000
-    database: otel
-    username: ${env:CLICKHOUSE_USER}
-    password: ${env:CLICKHOUSE_PASSWORD}
-    ttl: 336h
-    create_schema: true
-    async_insert: true
-    sending_queue: {enabled: true, queue_size: 2000, num_consumers: 4}
-    retry_on_failure: {enabled: true, max_elapsed_time: 300s}
-  clickhouse/metrics:
-    endpoint: tcp://account-clickhouse:9000
-    database: otel
-    username: ${env:CLICKHOUSE_USER}
-    password: ${env:CLICKHOUSE_PASSWORD}
-    ttl: 2160h
-    create_schema: true
-    async_insert: true
-    sending_queue: {enabled: true, queue_size: 2000, num_consumers: 4}
-    retry_on_failure: {enabled: true, max_elapsed_time: 300s}
+  otlp_grpc/signoz:
+    endpoint: signoz-otel-collector:4317
+    tls:
+      insecure: true
+    sending_queue:
+      enabled: true
+      storage: file_storage/queue
+      queue_size: 10000
+      num_consumers: 4
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 0s
 
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
+  file_storage/queue:
+    directory: /var/lib/otelcol/queue
+    create_directory: true
+    timeout: 10s
 
 service:
-  extensions: [health_check]
+  extensions: [health_check, file_storage/queue]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, resource/common, tail_sampling]
-      exporters: [clickhouse/traces]
+      processors: [memory_limiter, resource/common, tail_sampling, batch]
+      exporters: [otlp_grpc/signoz]
     metrics:
       receivers: [otlp, host_metrics, redis, postgresql, nginx, prometheus]
-      processors: [memory_limiter, resource/common]
-      exporters: [clickhouse/metrics]
+      processors: [memory_limiter, resource/common, batch]
+      exporters: [otlp_grpc/signoz]
     logs:
       receivers: [otlp, file_log/gateway, file_log/profile]
-      processors: [memory_limiter, resource/common]
-      exporters: [clickhouse/logs]
+      processors: [memory_limiter, resource/common, batch]
+      exporters: [otlp_grpc/signoz]

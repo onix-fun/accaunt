@@ -1,4 +1,11 @@
+include:
+  - ../../observability/signoz/compose.yml
+
 services:
+  signoz:
+    environment:
+      SIGNOZ_TOKENIZER_JWT_SECRET: ${SIGNOZ_TOKENIZER_JWT_SECRET:?Set SIGNOZ_TOKENIZER_JWT_SECRET to at least 32 random characters}
+
   account-gateway:
     image: ${ACCOUNT_GATEWAY_IMAGE:?Set ACCOUNT_GATEWAY_IMAGE to an immutable GHCR tag}
     environment:
@@ -153,29 +160,20 @@ services:
       - account-network
     restart: unless-stopped
 
-  account-clickhouse:
-    image: clickhouse/clickhouse-server:25.3.6.56-alpine
-    environment:
-      CLICKHOUSE_DB: otel
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-otel}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD}
+  account-otel-storage-init:
+    image: busybox:1.37.0
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 10001:10001 /var/lib/otelcol"]
     volumes:
-      - account_clickhouse_data:/var/lib/clickhouse
-    healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --user $${CLICKHOUSE_USER} --password $${CLICKHOUSE_PASSWORD} --query 'SELECT 1'"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-    networks: [account-network]
-    restart: unless-stopped
+      - account_otel_data:/var/lib/otelcol
+    network_mode: none
+    restart: "no"
 
   account-otel-collector:
     image: otel/opentelemetry-collector-contrib:0.151.0
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     environment:
       DEPLOYMENT_ENVIRONMENT: production
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-otel}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD}
       IDENTITY_REDIS_HOST: account-redis
       IDENTITY_REDIS_PASSWORD: ${IDENTITY_REDIS_PASSWORD:-account-redis-secret}
       POSTGRES_USER: ${POSTGRES_USER:-account}
@@ -184,27 +182,17 @@ services:
       - ../../observability/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
       - account_gateway_logs:/var/log/account/account-gateway:ro
       - profile_logs:/var/log/account/profile:ro
+      - account_otel_data:/var/lib/otelcol
     depends_on:
-      account-clickhouse:
+      account-otel-storage-init:
+        condition: service_completed_successfully
+      signoz-otel-collector:
+        condition: service_started
+      account-minio:
+        condition: service_started
+      account-postgres:
         condition: service_healthy
-    networks: [account-network]
-    restart: unless-stopped
-
-  account-grafana:
-    image: grafana/grafana:12.0.2
-    environment:
-      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-otel}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD}
-    ports:
-      - "${GRAFANA_PORT:-3000}:3000"
-    volumes:
-      - ../../observability/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - account_grafana_data:/var/lib/grafana
-    depends_on:
-      account-clickhouse:
+      account-redis:
         condition: service_healthy
     networks: [account-network]
     restart: unless-stopped
@@ -215,8 +203,7 @@ volumes:
   account_postgres_data:
   account_redis_data:
   account_minio_data:
-  account_clickhouse_data:
-  account_grafana_data:
+  account_otel_data:
 
 networks:
   account-network:

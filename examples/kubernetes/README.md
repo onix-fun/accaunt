@@ -1,8 +1,7 @@
 # Kubernetes
 
-Production-пример содержит Kustomize base и production overlay для frontend,
-gateway, backend, PostgreSQL, Redis, MinIO, Services, PVC, TLS Ingress и
-NetworkPolicy.
+Production-пример содержит Kustomize base и production overlay для приложения,
+а observability разворачивается закреплённым официальным SigNoz Helm chart.
 
 ## Файлы
 
@@ -11,6 +10,7 @@ NetworkPolicy.
 | `deployment.yaml` | namespace, config, workloads, services, PVC и ingress |
 | `secret.example.yaml` | шаблон application secrets и JWT-ключей |
 | `network-policy.yaml` | изоляция внутренних сервисов |
+| `signoz-values.yaml` | ресурсы и persistence для SigNoz + ClickHouse |
 
 ## Требования
 
@@ -20,6 +20,30 @@ NetworkPolicy.
 - CNI с поддержкой `NetworkPolicy`;
 - TLS-сертификат;
 - SMTP с STARTTLS.
+- Helm 3.
+
+## Observability
+
+Установите SigNoz до приложения. Chart управляет OTel Collector, ClickHouse,
+ZooKeeper, SigNoz UI и схемой хранения:
+
+```sh
+helm repo add signoz https://charts.signoz.io
+helm repo update
+helm upgrade --install signoz signoz/signoz \
+  --version 0.127.0 \
+  --namespace signoz \
+  --create-namespace \
+  -f signoz-values.yaml
+```
+
+Для cluster/node/container logs и metrics установите официальный
+`signoz/k8s-infra` chart, направив его в
+`signoz-otel-collector.signoz.svc.cluster.local:4317`. Backend уже отправляет
+JVM, HTTP, JDBC и Redis telemetry в SigNoz через OTLP.
+
+После первого входа настройте retention, notification channels и правила из
+`observability/signoz/alerts/README.md`.
 
 ## Настройка
 

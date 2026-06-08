@@ -2,10 +2,10 @@
 
 | Директория | Сценарий |
 |---|---|
-| [`docker-compose/`](docker-compose/) | Локальный тестовый запуск (build из исходников, все сервисы) |
-| [`kubernetes/`](kubernetes/) | Kubernetes с Ingress, PVC, Services и NetworkPolicy |
+| [`docker-compose/`](docker-compose/) | Single-node reference с готовыми образами и SigNoz |
+| [`kubernetes/`](kubernetes/) | Kubernetes с Ingress, PVC, NetworkPolicy и SigNoz Helm values |
 
-## Локальный тестовый запуск (Docker Compose)
+## Single-node Docker Compose
 
 ```sh
 cd examples/docker-compose
@@ -16,8 +16,8 @@ cd examples/docker-compose
 # 2. Скопировать и настроить .env (опционально)
 cp .env.example .env
 
-# 3. Запустить
-docker compose up --build
+# 3. Запустить immutable images
+docker compose up -d
 ```
 
 | Сервис | URL |
@@ -27,8 +27,7 @@ docker compose up --build
 | Swagger UI | `http://localhost:8089/swagger-ui` |
 | MailHog | `http://localhost:8026` |
 | MinIO Console | `http://localhost:9011` |
-
-Frontend собирается в production-режиме (multi-stage Dockerfile).
+| SigNoz | `http://localhost:3301` |
 
 ## Production
 
