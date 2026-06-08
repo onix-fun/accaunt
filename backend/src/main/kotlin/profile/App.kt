@@ -355,12 +355,17 @@ fun Application.module() {
     val grpcEnabled = environment.config.propertyOrNull("identity.grpc.enabled")?.getString()?.toBoolean() ?: false
     if (grpcEnabled) launch {
         try {
+            val cert = environment.config.propertyOrNull("identity.grpc.certificate")?.getString()
+            val privateKey = environment.config.propertyOrNull("identity.grpc.private_key")?.getString()
+            val clientCa = environment.config.propertyOrNull("identity.grpc.client_ca")?.getString()
+            val allowedSans = environment.config.propertyOrNull("identity.grpc.allowed_client_sans")?.getString()
+            
             val grpcServer = ProfileGrpcServer(
                 userRepository, grpcPort,
-                environment.config.property("identity.grpc.certificate").getString(),
-                environment.config.property("identity.grpc.private_key").getString(),
-                environment.config.property("identity.grpc.client_ca").getString(),
-                environment.config.property("identity.grpc.allowed_client_sans").getString(),
+                cert ?: "",
+                privateKey ?: "",
+                clientCa ?: "",
+                allowedSans ?: "",
                 environment.config.propertyOrNull("identity.grpc.reflection")?.getString()?.toBoolean() ?: false
             )
             grpcServer.start()
