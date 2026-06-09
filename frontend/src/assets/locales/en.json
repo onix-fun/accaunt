@@ -11,7 +11,9 @@
     "current": "current",
     "unknown": "Unknown",
     "verified": "Verified",
-    "notVerified": "Not verified"
+    "notVerified": "Not verified",
+    "success": "Success",
+    "error": "Error"
   },
   "auth": {
     "steps": {

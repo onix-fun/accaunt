@@ -11,7 +11,9 @@
     "current": "текущая",
     "unknown": "Неизвестно",
     "verified": "Подтверждено",
-    "notVerified": "Не подтверждено"
+    "notVerified": "Не подтверждено",
+    "success": "Успешно",
+    "error": "Ошибка"
   },
   "auth": {
     "steps": {
