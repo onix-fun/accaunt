@@ -56,7 +56,7 @@ const logoutAll = async () => {
           <strong class="text-[15px] font-bold text-[var(--text)] truncate">{{ userDisplayName(account) }}</strong>
           <small class="text-[13px] text-[var(--muted)] truncate">{{ account.email }}</small>
         </span>
-        <i v-if="account.id === authStore.currentUser?.id" class="pi pi-check text-green-600 shrink-0"></i>
+        <i v-if="account.id === authStore.currentUser?.id" class="pi pi-check text-[var(--success)] shrink-0"></i>
       </button>
 
       <button 

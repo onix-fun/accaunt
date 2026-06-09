@@ -86,11 +86,11 @@ watch(
         maxlength="1"
         autocomplete="one-time-code"
         class="w-full aspect-square text-center text-xl font-bold bg-[var(--surface-muted)] text-[var(--text)] rounded-[10px] outline-none transition-all focus:bg-[var(--surface-raised)] focus:ring-3 focus:ring-[var(--focus-ring)] border-0"
-        :class="{ 'bg-red-50 ring-2 ring-red-100': Boolean(localError) && modelValue.length === 6 }"
+        :class="{ 'bg-[var(--toast-error-bg)] ring-2 ring-[var(--danger)]/30': Boolean(localError) && modelValue.length === 6 }"
         @input="onInput(index, $event)"
         @keydown="onKeydown(index, $event)"
       />
     </div>
-    <span v-if="error" class="text-xs font-semibold text-red-600">{{ error }}</span>
+    <span v-if="error" class="text-xs font-semibold text-[var(--danger)]">{{ error }}</span>
   </div>
 </template>

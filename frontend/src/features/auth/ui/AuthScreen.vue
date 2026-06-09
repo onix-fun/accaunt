@@ -99,7 +99,7 @@ const steps = [
             <div class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center">
               <i v-if="flow.isCheckingUsername.value" class="pi pi-spinner pi-spin text-[var(--muted)]"></i>
               <i v-else-if="flow.usernameCheckTouched.value && flow.registerForm.value.username" 
-                 :class="[flow.isUsernameTaken.value ? 'pi pi-times text-red-500' : 'pi pi-check text-green-500']"></i>
+                 :class="[flow.isUsernameTaken.value ? 'pi pi-times text-[var(--danger)]' : 'pi pi-check text-[var(--success)]']"></i>
             </div>
           </div>
           <PMessage v-if="flow.registerForm.value.username && flow.registrationErrors.value.username" severity="error" variant="simple">
@@ -152,11 +152,11 @@ const steps = [
         </div>
 
         <div class="grid gap-1.5 pt-1" aria-live="polite">
-          <div class="flex items-center gap-2 text-xs font-semibold transition-colors" :class="flow.registerPasswordValid.value ? 'text-green-600' : 'text-red-600'">
+          <div class="flex items-center gap-2 text-xs font-semibold transition-colors" :class="flow.registerPasswordValid.value ? 'text-[var(--success)]' : 'text-[var(--danger)]'">
             <i :class="flow.registerPasswordValid.value ? 'pi pi-check' : 'pi pi-times'"></i>
             {{ t("errors.VALIDATION_PASSWORD_TOO_SHORT") }}
           </div>
-          <div class="flex items-center gap-2 text-xs font-semibold transition-colors" :class="flow.registerPasswordsMatch.value ? 'text-green-600' : 'text-red-600'">
+          <div class="flex items-center gap-2 text-xs font-semibold transition-colors" :class="flow.registerPasswordsMatch.value ? 'text-[var(--success)]' : 'text-[var(--danger)]'">
             <i :class="flow.registerPasswordsMatch.value ? 'pi pi-check' : 'pi pi-times'"></i>
             {{ t("auth.passwordsMatchRequirement") }}
           </div>

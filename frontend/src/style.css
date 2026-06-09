@@ -23,6 +23,37 @@
   --warning: #b7791f;
   --danger: #c24141;
   --shadow: 0 18px 42px rgba(22, 34, 51, 0.16);
+
+  /* Semantic */
+  --btn-primary-bg: var(--text);
+  --btn-primary-text: #ffffff;
+  --toast-success-bg: #edf8f4;
+  --toast-error-bg: #fef2f2;
+  --danger-section-bg: rgba(254, 242, 242, 0.5);
+}
+
+:root.dark {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-muted: #21262d;
+  --surface-raised: #1c2128;
+  --surface-active: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --subtle: #6e7681;
+  --accent: #f0f6fc;
+  --focus-ring: rgba(240, 246, 252, 0.1);
+  --success: #3fb950;
+  --warning: #d29922;
+  --danger: #f85149;
+  --shadow: 0 18px 42px rgba(0, 0, 0, 0.6);
+
+  /* Semantic */
+  --btn-primary-bg: var(--accent);
+  --btn-primary-text: var(--bg);
+  --toast-success-bg: rgba(63, 185, 80, 0.1);
+  --toast-error-bg: rgba(248, 81, 73, 0.1);
+  --danger-section-bg: rgba(248, 81, 73, 0.05);
 }
 
 * {
@@ -113,8 +144,8 @@ html, body, #app {
 }
 
 .p-button:not(.p-button-text):not(.p-button-outlined) {
-  background-color: var(--text) !important;
-  color: #fff !important;
+  background-color: var(--btn-primary-bg) !important;
+  color: var(--btn-primary-text) !important;
 }
 
 .p-dialog {
@@ -199,12 +230,12 @@ html, body, #app {
 }
 
 .p-toast-message-success .p-toast-message-icon {
-  background: #edf8f4 !important;
+  background: var(--toast-success-bg) !important;
   color: var(--success) !important;
 }
 
 .p-toast-message-error .p-toast-message-icon {
-  background: #fef2f2 !important;
+  background: var(--toast-error-bg) !important;
   color: var(--danger) !important;
 }
 
@@ -241,6 +272,6 @@ html, body, #app {
 }
 
 .locale-switcher button.active {
-  background: var(--text);
-  color: #fff;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
 }

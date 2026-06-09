@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { useAuthStore } from "@/infra/store";
+import { useAuthStore, useUIStore } from "@/infra/store";
 import AuthScreen from "@/features/auth/ui/AuthScreen.vue";
 
 const authStore = useAuthStore();
+const uiStore = useUIStore();
 const isBooting = ref(true);
 
 onMounted(async () => {
+  uiStore.init();
   try {
     await authStore.initAuth();
     if (authStore.isAuthenticated) {

@@ -7,6 +7,7 @@ import VerificationCodeInput from "@/shared/ui/VerificationCodeInput.vue";
 import PasswordInput from "@/shared/ui/PasswordInput.vue";
 import { isEmail, isVerificationCode } from "@/shared/lib/validation";
 import LocaleSwitcher from "@/shared/ui/LocaleSwitcher.vue";
+import ThemeSwitcher from "@/shared/ui/ThemeSwitcher.vue";
 
 const emit = defineEmits<{
   message: [message: string, tone?: "success" | "error" | "warning"];
@@ -166,6 +167,19 @@ const deleteAccount = async () => {
       <LocaleSwitcher variant="dropdown" class="shrink-0 w-full sm:w-auto" />
     </section>
 
+    <section class="bg-[var(--surface)] p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div class="flex items-center gap-3.5 min-w-0">
+        <div class="w-10 h-10 rounded-lg bg-[var(--surface-muted)] flex items-center justify-center text-[var(--muted)] shrink-0">
+          <i class="pi pi-palette text-lg"></i>
+        </div>
+        <div class="min-w-0">
+          <h3 class="text-[15px] font-bold m-0 text-[var(--text)] leading-tight">{{ t("system.theme") }}</h3>
+          <p class="m-0 mt-1 text-xs text-[var(--muted)] leading-relaxed truncate">{{ t("system.themeHint") }}</p>
+        </div>
+      </div>
+      <ThemeSwitcher class="shrink-0" />
+    </section>
+
     <section class="bg-[var(--surface)] p-4 rounded-2xl grid gap-4">
       <div class="flex items-start gap-3.5">
         <div class="w-10 h-10 rounded-lg bg-[var(--surface-muted)] flex items-center justify-center text-[var(--muted)] shrink-0">
@@ -225,7 +239,7 @@ const deleteAccount = async () => {
           <div class="grid gap-1.5">
             <span class="text-[13px] font-bold text-[var(--muted)]">{{ t("auth.confirmPassword") }}</span>
             <PasswordInput v-model="directForm.confirmPassword" autocomplete="new-password" minlength="8" required :aria-invalid="directPasswordMismatch" />
-            <span v-if="directPasswordMismatch" class="text-xs font-semibold text-red-600">{{ t("auth.passwordMismatch") }}</span>
+            <span v-if="directPasswordMismatch" class="text-xs font-semibold text-[var(--danger)]">{{ t("auth.passwordMismatch") }}</span>
           </div>
         </div>
         <PButton type="submit" :label="t('system.changePasswordAction')" icon="pi pi-check" class="w-full sm:w-auto self-start" :disabled="authStore.isLoading || directPasswordMismatch" :loading="authStore.isLoading" />
@@ -260,7 +274,7 @@ const deleteAccount = async () => {
           <div class="grid gap-1.5">
             <span class="text-[13px] font-bold text-[var(--muted)]">{{ t("auth.confirmPassword") }}</span>
             <PasswordInput v-model="resetForm.confirmPassword" autocomplete="new-password" minlength="8" required :aria-invalid="resetPasswordMismatch" />
-            <span v-if="resetPasswordMismatch" class="text-xs font-semibold text-red-600">{{ t("auth.passwordMismatch") }}</span>
+            <span v-if="resetPasswordMismatch" class="text-xs font-semibold text-[var(--danger)]">{{ t("auth.passwordMismatch") }}</span>
           </div>
         </div>
         <div class="flex flex-col sm:flex-row gap-2">
@@ -270,9 +284,9 @@ const deleteAccount = async () => {
       </form>
     </section>
 
-    <section class="bg-red-50/50 p-4 rounded-2xl grid gap-4">
+    <section class="bg-[var(--danger-section-bg)] p-4 rounded-2xl grid gap-4">
       <div class="flex items-start gap-3.5">
-        <div class="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+        <div class="w-10 h-10 rounded-lg bg-[var(--toast-error-bg)] flex items-center justify-center text-[var(--danger)] shrink-0">
           <i class="pi pi-trash text-lg"></i>
         </div>
         <div class="min-w-0">

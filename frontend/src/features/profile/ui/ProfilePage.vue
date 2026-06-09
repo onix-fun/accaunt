@@ -315,8 +315,8 @@ const revokeAvatarPreview = () => {
                     v-if="field.key === 'username' && editingFields.username && usernameAvailability !== 'idle'"
                     class="flex items-center gap-1.5 mt-2 text-xs font-semibold"
                     :class="{
-                      'text-green-600': usernameAvailability === 'available',
-                      'text-red-600': usernameAvailability === 'taken' || usernameAvailability === 'invalid',
+                      'text-[var(--success)]': usernameAvailability === 'available',
+                      'text-[var(--danger)]': usernameAvailability === 'taken' || usernameAvailability === 'invalid',
                     }"
                     aria-live="polite"
                   >

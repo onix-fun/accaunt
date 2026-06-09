@@ -55,6 +55,22 @@ const AccountTheme = definePreset(Aura, {
           950: "#1a1a1a",
         },
       },
+      dark: {
+        surface: {
+          0: "#ffffff",
+          50: "#0d1117",
+          100: "#161b22",
+          200: "#21262d",
+          300: "#30363d",
+          400: "#484f58",
+          500: "#6e7681",
+          600: "#8b949e",
+          700: "#b1bac4",
+          800: "#c9d1d9",
+          900: "#f0f6fc",
+          950: "#ffffff",
+        },
+      },
     },
   },
   components: {
