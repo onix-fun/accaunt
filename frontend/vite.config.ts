@@ -17,16 +17,6 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8091",
-        changeOrigin: true,
-        ws: true,
-        configure: (proxy, options) => {
-          proxy.on("error", (err, req, res) => {
-            console.log("proxy error", err);
-          });
-          proxy.on("proxyReq", (proxyReq, req, res) => {
-            proxyReq.setHeader("Connection", "close");
-          });
-        },
       },
     },
   },
